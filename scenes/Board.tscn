@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqds5n5mt0si"]
+
+[ext_resource type="Script" path="res://scripts/Board.gd" id="1_iw82w"]
+
+[node name="Board" type="Node2D"]
+script = ExtResource("1_iw82w")
+board_width = 8
+board_height = 17
+cell_size = 30
