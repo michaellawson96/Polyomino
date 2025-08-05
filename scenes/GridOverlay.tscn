@@ -2,5 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/GridOverlay.gd" id="1_pqktc"]
 
-[node name="GridOverlay" type="Node2D"]
+[node name="GridOverlay" type="Control"]
+layout_mode = 3
+anchors_preset = 0
 script = ExtResource("1_pqktc")

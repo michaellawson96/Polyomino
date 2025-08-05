@@ -3,16 +3,25 @@ extends Node2D
 @export var board_width: int = 10:
 	set(value):
 		board_width = value
-		queue_redraw()
+		_call_deferred_refresh()
+
 @export var board_height: int = 20:
 	set(value):
 		board_height = value
-		queue_redraw()
+		_call_deferred_refresh()
+
 @export var cell_size: int = 32:
 	set(value):
 		cell_size = value
 		_propagate_cell_size()
-		queue_redraw()
+		_call_deferred_refresh()
+
+func _call_deferred_refresh():
+	call_deferred("_refresh_overlay")
+
+func _refresh_overlay():
+	if has_node("GridOverlay"):
+		$GridOverlay.refresh()
 
 func _propagate_cell_size():
 	if not has_node("PolyominoContainer"):
@@ -44,7 +53,6 @@ func _ready():
 	$GridOverlay.refresh()
 # TEST_CODE ONLY! REMOVE!
 
-func _draw() -> void:
 	var color = Color(0.5, 0.5, 0.5)
 	var width = 1.0  # line thickness
 

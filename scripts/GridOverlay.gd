@@ -1,4 +1,4 @@
-extends Node2D
+extends Control
 
 @export var board_node_path: NodePath = ".."  # default to parent
 @onready var board: Node = get_node(board_node_path)
@@ -21,4 +21,13 @@ func _draw():
 		draw_line(Vector2(0, y_pos), Vector2(w * cs, y_pos), color, width)
 
 func refresh():
+	sync_size()
+
+func sync_size():
+	if board == null:
+		return
+	var w = board.board_width
+	var h = board.board_height
+	var cs = board.cell_size
+	size = Vector2(w * cs, h * cs)
 	queue_redraw()
