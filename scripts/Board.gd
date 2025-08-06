@@ -1,79 +1,60 @@
 extends Node2D
 
-@export var board_width: int = 10:
+# === Configuration ===
+@export_range(1, 100) var board_width: int = 10:
 	set(value):
-		board_width = value
-		_call_deferred_refresh()
+		board_width = clamp(value, 1, 100)
+		_refresh_deferred()
 
-@export var board_height: int = 20:
+@export_range(1, 100) var board_height: int = 20:
 	set(value):
-		board_height = value
-		_call_deferred_refresh()
+		board_height = clamp(value, 1, 100)
+		_refresh_deferred()
 
-@export var cell_size: int = 32:
+@export_range(1, 100) var cell_size: int = 32:
 	set(value):
-		cell_size = value
-		_propagate_cell_size()
-		_call_deferred_refresh()
+		cell_size = clamp(value, 1, 100)
+		_update_cell_size_for_children()
+		_refresh_deferred()
 
-func _call_deferred_refresh():
+# === Internal References ===
+@onready var grid_overlay := $GridOverlay
+@onready var polyomino_container := $PolyominoContainer
+
+# === Initialization ===
+func _ready():
+	_spawn_test_polyomino()
+	_refresh_overlay()
+
+# === Overlay Refresh ===
+func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
 
-func _refresh_overlay():
-	if has_node("GridOverlay"):
-		$GridOverlay.refresh()
+func _refresh_overlay() -> void:
+	if is_instance_valid(grid_overlay):
+		grid_overlay.refresh()
 
-func _propagate_cell_size():
-	if not has_node("PolyominoContainer"):
+# === Propagation ===
+func _update_cell_size_for_children() -> void:
+	if not is_instance_valid(polyomino_container):
 		return
 
-	var container = $PolyominoContainer
-	for child in container.get_children():
-		if child.has_method("set_cell_size"):
-			child.set_cell_size(cell_size)
+	for poly in polyomino_container.get_children():
+		if poly.has_method("set_cell_size"):
+			poly.set_cell_size(cell_size)
 
-			if child.has_method("set_shape") and "blocks" in child and "color" in child:
-				child.set_shape(child.blocks, child.color)
+			if poly.has_method("set_shape") and "blocks" in poly and "color" in poly:
+				poly.set_shape(poly.blocks, poly.color)
 
-	if has_node("GridOverlay"):
-		$GridOverlay.refresh()
-# TEST_CODE ONLY! REMOVE!
+	_refresh_overlay()
+
+# === Test Code Only ===
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 
-func _ready():
+func _spawn_test_polyomino() -> void:
 	var shape_data = PolyominoData.get_shape("I")
-	var polyomino = polyomino_scene.instantiate()
-	$PolyominoContainer.add_child(polyomino)
-
-	polyomino.set_cell_size(cell_size)
-	polyomino.set_grid_position(Vector2(3, 2))
-	polyomino.set_shape(shape_data.blocks, Color.GREEN)
-
-
-	$GridOverlay.refresh()
-# TEST_CODE ONLY! REMOVE!
-
-	var color = Color(0.5, 0.5, 0.5)
-	var width = 1.0  # line thickness
-
-	# Draw vertical lines
-	for x in range(board_width + 1):
-		var x_pos = float(x * cell_size) + 0.5
-		draw_line(
-			Vector2(x_pos, 0),
-			Vector2(x_pos, board_height * cell_size),
-			color,
-			width
-		)
-
-	# Draw horizontal lines
-	for y in range(board_height + 1):
-		var y_pos = float(y * cell_size) + 0.5
-		draw_line(
-			Vector2(0, y_pos),
-			Vector2(board_width * cell_size, y_pos),
-			color,
-			width
-		)
-
-
+	var poly = polyomino_scene.instantiate()
+	polyomino_container.add_child(poly)
+	poly.initialize(cell_size, Vector2(3, 2), shape_data.blocks, Color.GREEN)
+	_update_cell_size_for_children()
+# === End Test Code ===

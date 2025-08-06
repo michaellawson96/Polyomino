@@ -1,33 +1,47 @@
 extends Node2D
 
-@export var block_scene: PackedScene = preload("res://prefabs/Block.tscn")
+@onready var block_scene: PackedScene = preload("res://prefabs/Block.tscn")
+
 var cell_size: int = 32
-
 var grid_position: Vector2 = Vector2.ZERO
+var block_offsets: Array = []
+var block_color: Color = Color.WHITE
 
-func set_grid_position(pos: Vector2) -> void:
-	grid_position = pos
+func initialize(
+	new_cell_size: int,
+	new_grid_position: Vector2,
+	new_block_offsets: Array,
+	new_color: Color
+) -> void:
+	cell_size = new_cell_size
+	grid_position = new_grid_position
+	block_offsets = new_block_offsets
+	block_color = new_color
+
+	_update_position()
+	_redraw_blocks()
+
+func set_cell_size(new_size: int) -> void:
+	cell_size = new_size
+	_update_position()
+	_redraw_blocks()
+
+func set_shape(new_offsets: Array, new_color: Color) -> void:
+	block_offsets = new_offsets
+	block_color = new_color
+	_redraw_blocks()
+
+func _update_position() -> void:
 	position = (grid_position * cell_size).floor()
 
-
-func set_cell_size(value: int) -> void:
-	cell_size = value
-	position = (grid_position * cell_size).floor()
-
-
-var blocks: Array = []
-var color: Color = Color.WHITE
-
-func set_shape(block_offsets: Array, block_color: Color) -> void:
-	blocks = block_offsets
-	color = block_color
-
-	# Remove old blocks
+func _redraw_blocks() -> void:
+	# Clear old blocks
 	for child in get_children():
 		child.queue_free()
 
-	for offset in blocks:
+	# Spawn new blocks
+	for offset in block_offsets:
 		var block = block_scene.instantiate()
 		add_child(block)
 		block.position = offset * cell_size
-		block.set_visual(cell_size, color)
+		block.set_visual(cell_size, block_color)
