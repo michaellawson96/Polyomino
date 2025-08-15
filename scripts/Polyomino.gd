@@ -1,3 +1,4 @@
+class_name Polyomino
 extends Node2D
 
 @onready var block_scene: PackedScene = preload("res://prefabs/Block.tscn")
@@ -17,7 +18,6 @@ func initialize(
 	grid_position = new_grid_position
 	block_offsets = new_block_offsets
 	block_color = new_color
-
 	_update_position()
 	_redraw_blocks()
 
@@ -45,3 +45,9 @@ func _redraw_blocks() -> void:
 		add_child(block)
 		block.position = offset * cell_size
 		block.set_visual(cell_size, block_color)
+
+func is_polyomino() -> bool:
+	return true
+
+func get_block_cells() -> Array[Vector2i]:
+	return []

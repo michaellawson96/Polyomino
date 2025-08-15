@@ -17,14 +17,53 @@ extends Node2D
 		_update_cell_size_for_children()
 		_refresh_deferred()
 
+# ⬇️ NEW: single authoritative speed (cells per second). Positive=down, Negative=up, Zero=stop.
+@export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
+
 # === Internal References ===
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
+
+# === Tick state ===
+var _accum_cells: float = 0.0	# accumulated cells (can be negative)
 
 # === Initialization ===
 func _ready():
 	_spawn_test_polyomino()
 	_refresh_overlay()
+
+func _process(delta: float) -> void:
+	if fall_rate == 0.0:
+		return
+
+	# accumulate cells directly (delta * cells/sec)
+	_accum_cells += delta * fall_rate
+
+	# Move down for each whole positive cell
+	while _accum_cells >= 1.0:
+		_accum_cells -= 1.0
+		_step_fall(1)
+
+	# Move up for each whole negative cell
+	while _accum_cells <= -1.0:
+		_accum_cells += 1.0
+		_step_fall(-1)
+
+func _step_fall(dir: int) -> void:
+	for piece in get_polyomino_children():
+		_move_piece(piece, dir)
+
+func _move_piece(piece: Polyomino, dir: int) -> void:
+	piece.grid_position.y += dir
+	piece.position = (piece.grid_position * piece.cell_size).floor()
+
+func get_polyomino_children() -> Array[Polyomino]:
+	var pieces: Array[Polyomino] = []
+	for c in polyomino_container.get_children():
+		var p := c as Polyomino
+		if p != null:
+			pieces.append(p)
+	return pieces
 
 # === Overlay Refresh ===
 func _refresh_deferred() -> void:
@@ -42,7 +81,6 @@ func _update_cell_size_for_children() -> void:
 	for poly in polyomino_container.get_children():
 		if poly.has_method("set_cell_size"):
 			poly.set_cell_size(cell_size)
-
 			if poly.has_method("set_shape") and "blocks" in poly and "color" in poly:
 				poly.set_shape(poly.blocks, poly.color)
 
