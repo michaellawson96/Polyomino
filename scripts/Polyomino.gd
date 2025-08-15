@@ -50,4 +50,10 @@ func is_polyomino() -> bool:
 	return true
 
 func get_block_cells() -> Array[Vector2i]:
-	return []
+	var cells: Array[Vector2i] = []
+	# Treat offsets as cell coords (same as you use when drawing)
+	for off in block_offsets:
+		var ox := int(off.x)
+		var oy := int(off.y)
+		cells.append(Vector2i(ox, oy))
+	return cells

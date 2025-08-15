@@ -110,10 +110,10 @@ func _nudge_active_piece(dir: int) -> void:
 	var piece := _get_active_polyomino()
 	if piece == null:
 		return
-
-	# No boundary/collision checks yet (separate tasks). Just move.
-	piece.grid_position.x += dir
-	piece.position = (piece.grid_position * piece.cell_size).floor()
+	# Only move if it stays within bounds
+	if _can_move_within_bounds(piece, Vector2i(dir, 0)):
+		piece.grid_position.x += dir
+		piece.position = (piece.grid_position * piece.cell_size).floor()
 
 # Returns the current active piece (first child in the container).
 # If you later track "active" explicitly, update this method.
@@ -125,3 +125,21 @@ func _get_active_polyomino() -> Polyomino:
 		if p != null:
 			return p
 	return null
+
+# Returns true if moving by delta (in cells) keeps the piece within horizontal bounds
+func _can_move_within_bounds(piece: Polyomino, delta: Vector2i) -> bool:
+	var base_x := int(piece.grid_position.x)
+	var base_y := int(piece.grid_position.y) # not used yet, but handy for future
+	var dx := delta.x
+	# Use piece.get_block_cells() if you added it; else iterate piece.block_offsets
+	if piece.has_method("get_block_cells"):
+		for cell in piece.get_block_cells():
+			var nx := base_x + cell.x + dx
+			if nx < 0 or nx >= board_width:
+				return false
+	else:
+		for off in piece.block_offsets:
+			var nx := base_x + int(off.x) + dx
+			if nx < 0 or nx >= board_width:
+				return false
+	return true
