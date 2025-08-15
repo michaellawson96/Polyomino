@@ -96,3 +96,32 @@ func _spawn_test_polyomino() -> void:
 	poly.initialize(cell_size, Vector2(3, 2), shape_data.blocks, Color.GREEN)
 	_update_cell_size_for_children()
 # === End Test Code ===
+
+# === Input ===
+func _unhandled_input(event: InputEvent) -> void:
+	# Single-step per key press (no autorepeat here).
+	if event.is_action_pressed("ui_left"):
+		_nudge_active_piece(-1)
+	elif event.is_action_pressed("ui_right"):
+		_nudge_active_piece(1)
+
+# Move the current falling piece horizontally by dir (-1 left, +1 right)
+func _nudge_active_piece(dir: int) -> void:
+	var piece := _get_active_polyomino()
+	if piece == null:
+		return
+
+	# No boundary/collision checks yet (separate tasks). Just move.
+	piece.grid_position.x += dir
+	piece.position = (piece.grid_position * piece.cell_size).floor()
+
+# Returns the current active piece (first child in the container).
+# If you later track "active" explicitly, update this method.
+func _get_active_polyomino() -> Polyomino:
+	# Prefer the last added child to feel like “topmost” is active
+	var count := polyomino_container.get_child_count()
+	for i in range(count - 1, -1, -1):
+		var p := polyomino_container.get_child(i) as Polyomino
+		if p != null:
+			return p
+	return null
