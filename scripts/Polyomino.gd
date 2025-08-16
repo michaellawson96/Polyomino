@@ -71,6 +71,13 @@ func preview_rotate_counterclockwise() -> Array[Vector2]:
 		var off: Vector2 = block_offsets[i]
 		out.append(Vector2(-off.y, off.x))  # (x, y) -> (-y, x)
 	return out
+	
+func preview_flip_horizontal() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for i in range(block_offsets.size()):
+		var off: Vector2 = block_offsets[i]
+		out.append(Vector2(-off.x, off.y)) # mirror across Y-axis
+	return out
 
 func apply_offsets(new_offsets: Array[Vector2]) -> void:
 	block_offsets = new_offsets

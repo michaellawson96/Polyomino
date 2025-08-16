@@ -1,4 +1,9 @@
+@tool
 extends Node2D
+
+const PolyData := preload("res://scripts/PolyominoData.gd")  # adjust path if needed
+
+var default_spawn_id: String = "I3"
 
 # === Configuration ===
 @export_range(1, 100) var board_width: int = 10:
@@ -21,6 +26,7 @@ extends Node2D
 # ⬇️ NEW: single authoritative speed (cells per second). Positive=down, Negative=up, Zero=stop.
 @export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
 
+
 # === Internal References ===
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
@@ -30,6 +36,8 @@ var _accum_cells: float = 0.0	# accumulated cells (can be negative)
 
 # === Initialization ===
 func _ready():
+	if Engine.is_editor_hint():
+		return
 	_spawn_test_polyomino()
 	_refresh_overlay()
 
@@ -89,28 +97,32 @@ func _update_cell_size_for_children() -> void:
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 
 func _spawn_test_polyomino() -> void:
-	var shape_data = PolyominoData.get_shape("I")
-	var poly = polyomino_scene.instantiate()
-	polyomino_container.add_child(poly)
-	poly.initialize(cell_size, Vector2(3, 2), shape_data.blocks, Color.GREEN)
-	_coerce_piece_into_horizontal_bounds(poly)  # <-- add this
-	_update_cell_size_for_children()
+	_spawn_from_id(default_spawn_id)
 
 # === End Test Code ===
 
 # === Input ===
 func _unhandled_input(event: InputEvent) -> void:
-	# Left/Right already here if you added nudging earlier:
 	if event.is_action_pressed("ui_left"):
 		_nudge_active_piece(-1)
 	elif event.is_action_pressed("ui_right"):
 		_nudge_active_piece(1)
 
-	# Rotation:
 	if event.is_action_pressed("rotate_cw"):   # X
 		_rotate_active_piece_cw_no_kick()
 	elif event.is_action_pressed("rotate_ccw"): # Z
 		_rotate_active_piece_ccw_no_kick()
+	elif event.is_action_pressed("flip_h"):     # C
+		_flip_active_piece_horizontal_no_kick()
+
+func _flip_active_piece_horizontal_no_kick() -> void:
+	var p := _get_active_polyomino()
+	if p == null:
+		return
+	var preview: Array[Vector2] = p.preview_flip_horizontal()
+	if _shape_fits_bounds(p, preview): # same bounds check; name is fine
+		p.apply_offsets(preview)
+
 
 
 # Move the current falling piece horizontally by dir (-1 left, +1 right)
@@ -209,7 +221,7 @@ func _coerce_all_pieces_into_bounds() -> void:
 
 # Returns true if placing the given rotated offsets at the piece's grid_position
 # would keep ALL blocks inside [0..board_width-1] x [0..board_height-1].
-func _rotation_fits(piece: Polyomino, rotated: Array[Vector2]) -> bool:
+func _shape_fits_bounds(piece: Polyomino, rotated: Array[Vector2]) -> bool:
 	var base_x: int = int(piece.grid_position.x)
 	var base_y: int = int(piece.grid_position.y)
 	for i in range(rotated.size()):
@@ -227,7 +239,7 @@ func _rotate_active_piece_cw_no_kick() -> void:
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_rotate_clockwise()
-	if _rotation_fits(p, preview):
+	if _shape_fits_bounds(p, preview):
 		p.apply_offsets(preview)  # rotate; no position change
 	# else: ignore input (no kick)
 
@@ -236,6 +248,48 @@ func _rotate_active_piece_ccw_no_kick() -> void:
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_rotate_counterclockwise()
-	if _rotation_fits(p, preview):
+	if _shape_fits_bounds(p, preview):
 		p.apply_offsets(preview)
+
+func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
+	var s: Dictionary = PolyData.get_shape(id)
+	if s.is_empty():
+		push_warning("Unknown shape id: %s" % id)
+		return
+
+	var poly: Polyomino = polyomino_scene.instantiate()
+	polyomino_container.add_child(poly)
+
+	var blocks: Array = s["blocks"]
+	var color: Color = s["color"]
+	poly.initialize(cell_size, at_grid, blocks, color)
+
+	_coerce_piece_into_horizontal_bounds(poly)
+	_update_cell_size_for_children()
+
+# 2) Dynamic dropdown built from PolyominoData.SHAPES via the static get_all()
+func _get_property_list() -> Array:
+	var list: Array = []
+
+	var ids: Array[String] = []
+	# Call the STATIC method directly on the preloaded script
+	var shapes: Array = PolyData.get_all()
+	for s in shapes:
+		if s.has("id"):
+			ids.append(String(s["id"]))
+	ids.sort()
+
+	# Fallback (optional)
+	if ids.is_empty():
+		ids = ["M1","D2","I3","L3","F5","X5","W5","T5","U5","V5","P5","N5","Y5","Z5","L5","I5"]
+
+	list.append({
+		"name": "default_spawn_id",
+		"type": TYPE_STRING,
+		"usage": PROPERTY_USAGE_DEFAULT,
+		"hint": PROPERTY_HINT_ENUM,
+		"hint_string": ",".join(ids)
+	})
+	return list
+
 
