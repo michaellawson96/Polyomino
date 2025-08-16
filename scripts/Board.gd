@@ -36,15 +36,12 @@ func _ready():
 func _process(delta: float) -> void:
 	if fall_rate == 0.0:
 		return
-
 	# accumulate cells directly (delta * cells/sec)
 	_accum_cells += delta * fall_rate
-
 	# Move down for each whole positive cell
 	while _accum_cells >= 1.0:
 		_accum_cells -= 1.0
 		_step_fall(1)
-
 	# Move up for each whole negative cell
 	while _accum_cells <= -1.0:
 		_accum_cells += 1.0
@@ -103,11 +100,18 @@ func _spawn_test_polyomino() -> void:
 
 # === Input ===
 func _unhandled_input(event: InputEvent) -> void:
-	# Single-step per key press (no autorepeat here).
+	# Left/Right already here if you added nudging earlier:
 	if event.is_action_pressed("ui_left"):
 		_nudge_active_piece(-1)
 	elif event.is_action_pressed("ui_right"):
 		_nudge_active_piece(1)
+
+	# Rotation:
+	if event.is_action_pressed("rotate_cw"):   # X
+		_rotate_active_piece_cw_no_kick()
+	elif event.is_action_pressed("rotate_ccw"): # Z
+		_rotate_active_piece_ccw_no_kick()
+
 
 # Move the current falling piece horizontally by dir (-1 left, +1 right)
 func _nudge_active_piece(dir: int) -> void:
@@ -202,3 +206,36 @@ func _coerce_piece_into_horizontal_bounds(piece: Polyomino) -> void:
 func _coerce_all_pieces_into_bounds() -> void:
 	for p in get_polyomino_children():
 		_coerce_piece_into_horizontal_bounds(p)
+
+# Returns true if placing the given rotated offsets at the piece's grid_position
+# would keep ALL blocks inside [0..board_width-1] x [0..board_height-1].
+func _rotation_fits(piece: Polyomino, rotated: Array[Vector2]) -> bool:
+	var base_x: int = int(piece.grid_position.x)
+	var base_y: int = int(piece.grid_position.y)
+	for i in range(rotated.size()):
+		var off: Vector2 = rotated[i]
+		var nx: int = base_x + int(off.x)
+		var ny: int = base_y + int(off.y)
+		if nx < 0 or nx >= board_width:
+			return false
+		if ny < 0 or ny >= board_height:
+			return false
+	return true
+
+func _rotate_active_piece_cw_no_kick() -> void:
+	var p := _get_active_polyomino()
+	if p == null:
+		return
+	var preview: Array[Vector2] = p.preview_rotate_clockwise()
+	if _rotation_fits(p, preview):
+		p.apply_offsets(preview)  # rotate; no position change
+	# else: ignore input (no kick)
+
+func _rotate_active_piece_ccw_no_kick() -> void:
+	var p := _get_active_polyomino()
+	if p == null:
+		return
+	var preview: Array[Vector2] = p.preview_rotate_counterclockwise()
+	if _rotation_fits(p, preview):
+		p.apply_offsets(preview)
+

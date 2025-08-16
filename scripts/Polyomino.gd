@@ -57,3 +57,21 @@ func get_block_cells() -> Array[Vector2i]:
 		var oy := int(off.y)
 		cells.append(Vector2i(ox, oy))
 	return cells
+
+func preview_rotate_clockwise() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for i in range(block_offsets.size()):
+		var off: Vector2 = block_offsets[i]
+		out.append(Vector2(off.y, -off.x))  # (x, y) -> (y, -x)
+	return out
+
+func preview_rotate_counterclockwise() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for i in range(block_offsets.size()):
+		var off: Vector2 = block_offsets[i]
+		out.append(Vector2(-off.y, off.x))  # (x, y) -> (-y, x)
+	return out
+
+func apply_offsets(new_offsets: Array[Vector2]) -> void:
+	block_offsets = new_offsets
+	_redraw_blocks()
