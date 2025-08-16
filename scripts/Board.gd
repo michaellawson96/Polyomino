@@ -252,7 +252,7 @@ func _rotate_active_piece_ccw_no_kick() -> void:
 		p.apply_offsets(preview)
 
 func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
-	var s: Dictionary = PolyData.get_shape(id)
+	var s: Dictionary = PolyData.get_shape_with_color(id)
 	if s.is_empty():
 		push_warning("Unknown shape id: %s" % id)
 		return
@@ -260,8 +260,9 @@ func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
 
-	var blocks: Array = s["blocks"]
-	var color: Color = s["color"]
+	var blocks: Array = s["blocks"]          # Array[Vector2]
+	var color: Color = s["color"]            # Color (auto-assigned from ID)
+
 	poly.initialize(cell_size, at_grid, blocks, color)
 
 	_coerce_piece_into_horizontal_bounds(poly)
