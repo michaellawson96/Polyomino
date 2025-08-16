@@ -3,6 +3,12 @@ extends Node2D
 
 const PolyData := preload("res://scripts/PolyominoData.gd")  # adjust path if needed
 
+@onready var inactive_container := $InactiveContainer
+
+var _occupied: Dictionary = {}	# key: Vector2i cell -> Color (or true)
+var _rng := RandomNumberGenerator.new()
+
+
 var default_spawn_id: String = "I3"
 
 # === Configuration ===
@@ -38,8 +44,14 @@ var _accum_cells: float = 0.0	# accumulated cells (can be negative)
 func _ready():
 	if Engine.is_editor_hint():
 		return
+	if inactive_container == null:
+		inactive_container = Node2D.new()
+		inactive_container.name = "InactiveContainer"
+		add_child(inactive_container)
+	_rng.randomize()
 	_spawn_test_polyomino()
 	_refresh_overlay()
+
 
 func _process(delta: float) -> void:
 	if fall_rate == 0.0:
@@ -57,7 +69,17 @@ func _process(delta: float) -> void:
 
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
-		_move_piece(piece, dir)
+		if dir > 0:
+			# Moving downward: if collision on next step, lock; else move
+			if _would_collide(piece, Vector2i(0, 1)):
+				_lock_piece(piece)
+			else:
+				_move_piece(piece, 1)
+		elif dir < 0:
+			# Moving upward (reverse): just block at top/occupied; no locking
+			if not _would_collide(piece, Vector2i(0, -1)):
+				_move_piece(piece, -1)
+
 
 func _move_piece(piece: Polyomino, dir: int) -> void:
 	piece.grid_position.y += dir
@@ -97,7 +119,8 @@ func _update_cell_size_for_children() -> void:
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 
 func _spawn_test_polyomino() -> void:
-	_spawn_from_id(default_spawn_id)
+	_spawn_from_id(_pick_random_id())
+
 
 # === End Test Code ===
 
@@ -128,12 +151,11 @@ func _flip_active_piece_horizontal_no_kick() -> void:
 # Move the current falling piece horizontally by dir (-1 left, +1 right)
 func _nudge_active_piece(dir: int) -> void:
 	var piece := _get_active_polyomino()
-	if piece == null:
-		return
-	# Only move if it stays within bounds
-	if _can_move_within_bounds(piece, Vector2i(dir, 0)):
+	if piece == null: return
+	if not _would_collide(piece, Vector2i(dir, 0)):
 		piece.grid_position.x += dir
 		piece.position = (piece.grid_position * piece.cell_size).floor()
+
 
 # Returns the current active piece (first child in the container).
 # If you later track "active" explicitly, update this method.
@@ -260,13 +282,13 @@ func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
 
-	var blocks: Array = s["blocks"]          # Array[Vector2]
-	var color: Color = s["color"]            # Color (auto-assigned from ID)
-
+	var blocks: Array = s["blocks"]
+	var color: Color = s["color"]
 	poly.initialize(cell_size, at_grid, blocks, color)
 
 	_coerce_piece_into_horizontal_bounds(poly)
 	_update_cell_size_for_children()
+
 
 # 2) Dynamic dropdown built from PolyominoData.SHAPES via the static get_all()
 func _get_property_list() -> Array:
@@ -293,4 +315,45 @@ func _get_property_list() -> Array:
 	})
 	return list
 
+func _all_shape_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for s in PolyData.get_all():
+		if s.has("id"):
+			ids.append(String(s["id"]))
+	return ids
 
+func _pick_random_id() -> String:
+	var ids := _all_shape_ids()
+	if ids.is_empty():
+		return default_spawn_id
+	return ids[_rng.randi_range(0, ids.size() - 1)]
+
+func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var base := Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
+	for off in piece.block_offsets:
+		cells.append(base + Vector2i(int(off.x), int(off.y)))
+	return cells
+
+func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
+	var cells := _piece_cells(piece)
+	for c in cells:
+		var nx := c.x + delta.x
+		var ny := c.y + delta.y
+		if nx < 0 or nx >= board_width: return true
+		if ny < 0 or ny >= board_height: return true
+		if _occupied.has(Vector2i(nx, ny)): return true
+	return false
+
+func _lock_piece(piece: Polyomino) -> void:
+	# Merge cells into occupied
+	for c in _piece_cells(piece):
+		_occupied[c] = true  # store color later if you want line clears etc.
+
+	# Move the node to inactive so it no longer gets updated
+	if piece.get_parent() != inactive_container:
+		piece.get_parent().remove_child(piece)
+		inactive_container.add_child(piece)
+
+	# Spawn next piece at the top (random id)
+	_spawn_from_id(_pick_random_id())
