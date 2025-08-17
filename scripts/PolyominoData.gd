@@ -50,3 +50,14 @@ static func get_shape_with_color(id: String) -> Dictionary:
 	var out := s.duplicate(true)
 	out["color"] = get_color(id)
 	return out
+
+static func get_blocks(id: String) -> Array[Vector2]:
+	var s := get_shape(id)
+	if s.is_empty():
+		return []
+	var raw: Array = s["blocks"]
+	var out: Array[Vector2] = []
+	out.resize(raw.size())
+	for i in raw.size():
+		out[i] = raw[i] as Vector2
+	return out

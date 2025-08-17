@@ -122,6 +122,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_rotate_active_piece_ccw_no_kick()
 	elif event.is_action_pressed("flip_h"):
 		_flip_active_piece_horizontal_no_kick()
+	elif event.is_action_pressed("origin_next"):
+		var p := _get_active_polyomino()
+		if p != null:
+			p.cycle_origin()
 
 func _update_precontrol(delta: float) -> void:
 	var piece := _get_active_polyomino()
@@ -304,7 +308,7 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		return
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
-	var blocks: Array = s["blocks"]
+	var blocks: Array[Vector2] = POLY_DATA.get_blocks(id)
 	var color: Color = s["color"]
 	var min_x := 999999
 	var max_y := -999999
@@ -314,6 +318,8 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 	var start_x := -min_x - 1
 	var start_y := -max_y - 1
 	poly.initialize(cell_size, Vector2(start_x, start_y), blocks, color)
+	poly.show_origin = true
+	poly._update_origin_marker()
 	_update_cell_size_for_children()
 	if use_precontrol:
 		_state = GameState.PRECONTROL_AUTOSLIDE
@@ -417,6 +423,8 @@ func _hard_drop_active() -> void:
 func _lock_piece(piece: Polyomino) -> void:
 	for c in _piece_cells(piece):
 		_occupied[c] = true
+	piece.show_origin = false
+	piece._update_origin_marker()
 	if piece.get_parent() != inactive_container:
 		piece.get_parent().remove_child(piece)
 		inactive_container.add_child(piece)
