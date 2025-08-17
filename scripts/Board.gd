@@ -106,7 +106,7 @@ func _rotate_active_piece_cw_no_kick() -> void:
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_rotate_clockwise()
-	if _shape_fits_bounds(p, preview):
+	if _can_place_orientation(p, preview):
 		p.apply_offsets(preview)
 
 func _rotate_active_piece_ccw_no_kick() -> void:
@@ -114,7 +114,7 @@ func _rotate_active_piece_ccw_no_kick() -> void:
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_rotate_counterclockwise()
-	if _shape_fits_bounds(p, preview):
+	if _can_place_orientation(p, preview):
 		p.apply_offsets(preview)
 
 func _flip_active_piece_horizontal_no_kick() -> void:
@@ -122,21 +122,23 @@ func _flip_active_piece_horizontal_no_kick() -> void:
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_flip_horizontal()
-	if _shape_fits_bounds(p, preview):
+	if _can_place_orientation(p, preview):
 		p.apply_offsets(preview)
 
-func _shape_fits_bounds(piece: Polyomino, rotated: Array[Vector2]) -> bool:
-	var base_x: int = int(piece.grid_position.x)
-	var base_y: int = int(piece.grid_position.y)
-	for i in range(rotated.size()):
-		var off: Vector2 = rotated[i]
-		var nx: int = base_x + int(off.x)
-		var ny: int = base_y + int(off.y)
+func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
+	var base_x := int(piece.grid_position.x)
+	var base_y := int(piece.grid_position.y)
+	for off in offsets:
+		var nx := base_x + int(off.x)
+		var ny := base_y + int(off.y)
 		if nx < 0 or nx >= board_width:
 			return false
 		if ny < 0 or ny >= board_height:
 			return false
+		if _occupied.has(Vector2i(nx, ny)):
+			return false
 	return true
+
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
@@ -144,21 +146,6 @@ func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	for off in piece.block_offsets:
 		cells.append(base + Vector2i(int(off.x), int(off.y)))
 	return cells
-
-func _can_move_within_bounds(piece: Polyomino, delta: Vector2i) -> bool:
-	var base_x := int(piece.grid_position.x)
-	var dx := delta.x
-	if piece.has_method("get_block_cells"):
-		for cell in piece.get_block_cells():
-			var nx := base_x + cell.x + dx
-			if nx < 0 or nx >= board_width:
-				return false
-	else:
-		for off in piece.block_offsets:
-			var nx := base_x + int(off.x) + dx
-			if nx < 0 or nx >= board_width:
-				return false
-	return true
 
 func _allowed_x_range_for_piece(piece: Polyomino) -> Vector2i:
 	var off_min := 0
