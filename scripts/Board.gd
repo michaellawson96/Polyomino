@@ -1,46 +1,34 @@
 @tool
 extends Node2D
 
-const PolyData := preload("res://scripts/PolyominoData.gd")  # adjust path if needed
+const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 
-@onready var inactive_container := $InactiveContainer
-
-var _occupied: Dictionary = {}	# key: Vector2i cell -> Color (or true)
-var _rng := RandomNumberGenerator.new()
-
-
-var default_spawn_id: String = "I3"
-
-# === Configuration ===
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
 		board_width = clamp(value, 1, 100)
-		call_deferred("_coerce_all_pieces_into_bounds")  # <-- add this
+		call_deferred("_coerce_all_pieces_into_bounds")
 		_refresh_deferred()
-
 @export_range(1, 100) var board_height: int = 20:
 	set(value):
 		board_height = clamp(value, 1, 100)
 		_refresh_deferred()
-
 @export_range(1, 100) var cell_size: int = 32:
 	set(value):
 		cell_size = clamp(value, 1, 100)
 		_update_cell_size_for_children()
 		_refresh_deferred()
-
-# ⬇️ NEW: single authoritative speed (cells per second). Positive=down, Negative=up, Zero=stop.
 @export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
+@export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 
-
-# === Internal References ===
+@onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
 
-# === Tick state ===
-var _accum_cells: float = 0.0	# accumulated cells (can be negative)
+var _occupied: Dictionary = {}
+var _rng := RandomNumberGenerator.new()
+var default_spawn_id: String = "I3"
+var _accum_cells: float = 0.0
 
-# === Initialization ===
 func _ready():
 	if Engine.is_editor_hint():
 		return
@@ -52,38 +40,58 @@ func _ready():
 	_spawn_test_polyomino()
 	_refresh_overlay()
 
-
 func _process(delta: float) -> void:
 	if fall_rate == 0.0:
 		return
-	# accumulate cells directly (delta * cells/sec)
 	_accum_cells += delta * fall_rate
-	# Move down for each whole positive cell
 	while _accum_cells >= 1.0:
 		_accum_cells -= 1.0
 		_step_fall(1)
-	# Move up for each whole negative cell
 	while _accum_cells <= -1.0:
 		_accum_cells += 1.0
 		_step_fall(-1)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_left"):
+		_nudge_active_piece(-1)
+	elif event.is_action_pressed("ui_right"):
+		_nudge_active_piece(1)
+	if event.is_action_pressed("rotate_cw"):
+		_rotate_active_piece_cw_no_kick()
+	elif event.is_action_pressed("rotate_ccw"):
+		_rotate_active_piece_ccw_no_kick()
+	elif event.is_action_pressed("flip_h"):
+		_flip_active_piece_horizontal_no_kick()
+
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
 		if dir > 0:
-			# Moving downward: if collision on next step, lock; else move
 			if _would_collide(piece, Vector2i(0, 1)):
 				_lock_piece(piece)
 			else:
 				_move_piece(piece, 1)
 		elif dir < 0:
-			# Moving upward (reverse): just block at top/occupied; no locking
 			if not _would_collide(piece, Vector2i(0, -1)):
 				_move_piece(piece, -1)
-
 
 func _move_piece(piece: Polyomino, dir: int) -> void:
 	piece.grid_position.y += dir
 	piece.position = (piece.grid_position * piece.cell_size).floor()
+
+func _nudge_active_piece(dir: int) -> void:
+	var piece := _get_active_polyomino()
+	if piece == null: return
+	if not _would_collide(piece, Vector2i(dir, 0)):
+		piece.grid_position.x += dir
+		piece.position = (piece.grid_position * piece.cell_size).floor()
+
+func _get_active_polyomino() -> Polyomino:
+	var count := polyomino_container.get_child_count()
+	for i in range(count - 1, -1, -1):
+		var p := polyomino_container.get_child(i) as Polyomino
+		if p != null:
+			return p
+	return null
 
 func get_polyomino_children() -> Array[Polyomino]:
 	var pieces: Array[Polyomino] = []
@@ -93,87 +101,53 @@ func get_polyomino_children() -> Array[Polyomino]:
 			pieces.append(p)
 	return pieces
 
-# === Overlay Refresh ===
-func _refresh_deferred() -> void:
-	call_deferred("_refresh_overlay")
-
-func _refresh_overlay() -> void:
-	if is_instance_valid(grid_overlay):
-		grid_overlay.refresh()
-
-# === Propagation ===
-func _update_cell_size_for_children() -> void:
-	if not is_instance_valid(polyomino_container):
+func _rotate_active_piece_cw_no_kick() -> void:
+	var p := _get_active_polyomino()
+	if p == null:
 		return
-	for poly in polyomino_container.get_children():
-		if poly.has_method("set_cell_size"):
-			poly.set_cell_size(cell_size)
-			if poly.has_method("set_shape") and "blocks" in poly and "color" in poly:
-				poly.set_shape(poly.blocks, poly.color)
-	# Keep everything inside after visual/shape changes
-	_coerce_all_pieces_into_bounds()  # <-- optional but nice
-	_refresh_overlay()
+	var preview: Array[Vector2] = p.preview_rotate_clockwise()
+	if _shape_fits_bounds(p, preview):
+		p.apply_offsets(preview)
 
-
-# === Test Code Only ===
-@export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
-
-func _spawn_test_polyomino() -> void:
-	_spawn_from_id(_pick_random_id())
-
-
-# === End Test Code ===
-
-# === Input ===
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_left"):
-		_nudge_active_piece(-1)
-	elif event.is_action_pressed("ui_right"):
-		_nudge_active_piece(1)
-
-	if event.is_action_pressed("rotate_cw"):   # X
-		_rotate_active_piece_cw_no_kick()
-	elif event.is_action_pressed("rotate_ccw"): # Z
-		_rotate_active_piece_ccw_no_kick()
-	elif event.is_action_pressed("flip_h"):     # C
-		_flip_active_piece_horizontal_no_kick()
+func _rotate_active_piece_ccw_no_kick() -> void:
+	var p := _get_active_polyomino()
+	if p == null:
+		return
+	var preview: Array[Vector2] = p.preview_rotate_counterclockwise()
+	if _shape_fits_bounds(p, preview):
+		p.apply_offsets(preview)
 
 func _flip_active_piece_horizontal_no_kick() -> void:
 	var p := _get_active_polyomino()
 	if p == null:
 		return
 	var preview: Array[Vector2] = p.preview_flip_horizontal()
-	if _shape_fits_bounds(p, preview): # same bounds check; name is fine
+	if _shape_fits_bounds(p, preview):
 		p.apply_offsets(preview)
 
+func _shape_fits_bounds(piece: Polyomino, rotated: Array[Vector2]) -> bool:
+	var base_x: int = int(piece.grid_position.x)
+	var base_y: int = int(piece.grid_position.y)
+	for i in range(rotated.size()):
+		var off: Vector2 = rotated[i]
+		var nx: int = base_x + int(off.x)
+		var ny: int = base_y + int(off.y)
+		if nx < 0 or nx >= board_width:
+			return false
+		if ny < 0 or ny >= board_height:
+			return false
+	return true
 
+func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var base := Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
+	for off in piece.block_offsets:
+		cells.append(base + Vector2i(int(off.x), int(off.y)))
+	return cells
 
-# Move the current falling piece horizontally by dir (-1 left, +1 right)
-func _nudge_active_piece(dir: int) -> void:
-	var piece := _get_active_polyomino()
-	if piece == null: return
-	if not _would_collide(piece, Vector2i(dir, 0)):
-		piece.grid_position.x += dir
-		piece.position = (piece.grid_position * piece.cell_size).floor()
-
-
-# Returns the current active piece (first child in the container).
-# If you later track "active" explicitly, update this method.
-func _get_active_polyomino() -> Polyomino:
-	# Prefer the last added child to feel like “topmost” is active
-	var count := polyomino_container.get_child_count()
-	for i in range(count - 1, -1, -1):
-		var p := polyomino_container.get_child(i) as Polyomino
-		if p != null:
-			return p
-	return null
-
-# Returns true if moving by delta (in cells) keeps the piece within horizontal bounds
 func _can_move_within_bounds(piece: Polyomino, delta: Vector2i) -> bool:
 	var base_x := int(piece.grid_position.x)
-	var base_y := int(piece.grid_position.y) # not used yet, but handy for future
 	var dx := delta.x
-	# Use piece.get_block_cells() if you added it; else iterate piece.block_offsets
 	if piece.has_method("get_block_cells"):
 		for cell in piece.get_block_cells():
 			var nx := base_x + cell.x + dx
@@ -186,9 +160,7 @@ func _can_move_within_bounds(piece: Polyomino, delta: Vector2i) -> bool:
 				return false
 	return true
 
-# Compute allowed grid_position.x range for a piece so all blocks fit horizontally.
 func _allowed_x_range_for_piece(piece: Polyomino) -> Vector2i:
-	# Determine min/max horizontal offsets of the shape
 	var off_min := 0
 	var off_max := 0
 	if piece.has_method("get_block_cells"):
@@ -213,99 +185,50 @@ func _allowed_x_range_for_piece(piece: Polyomino) -> Vector2i:
 			else:
 				if x2 < off_min: off_min = x2
 				if x2 > off_max: off_max = x2
-
-	# To keep all blocks within [0, board_width-1]:
-	# grid_x + off_min >= 0     -> grid_x >= -off_min
-	# grid_x + off_max <= W-1   -> grid_x <= (W-1) - off_max
 	var lower := -off_min
 	var upper := (board_width - 1) - off_max
 	return Vector2i(lower, upper)
 
-# Shift the piece horizontally (if needed) so it fully fits in the board.
 func _coerce_piece_into_horizontal_bounds(piece: Polyomino) -> void:
-	var range := _allowed_x_range_for_piece(piece)
-	var lower := range.x
-	var upper := range.y
-
-	# If the piece is wider than the board (no valid range), place it as far left as possible.
+	var allowed_range := _allowed_x_range_for_piece(piece)
+	var lower := allowed_range.x
+	var upper := allowed_range.y
 	if lower > upper:
 		piece.grid_position.x = lower
 	else:
 		piece.grid_position.x = clamp(int(piece.grid_position.x), lower, upper)
-
-	# Apply the visual position update
 	piece.position = (piece.grid_position * piece.cell_size).floor()
 
-# Apply coercion to every polyomino in the container (useful after a resize).
 func _coerce_all_pieces_into_bounds() -> void:
 	for p in get_polyomino_children():
 		_coerce_piece_into_horizontal_bounds(p)
 
-# Returns true if placing the given rotated offsets at the piece's grid_position
-# would keep ALL blocks inside [0..board_width-1] x [0..board_height-1].
-func _shape_fits_bounds(piece: Polyomino, rotated: Array[Vector2]) -> bool:
-	var base_x: int = int(piece.grid_position.x)
-	var base_y: int = int(piece.grid_position.y)
-	for i in range(rotated.size()):
-		var off: Vector2 = rotated[i]
-		var nx: int = base_x + int(off.x)
-		var ny: int = base_y + int(off.y)
-		if nx < 0 or nx >= board_width:
-			return false
-		if ny < 0 or ny >= board_height:
-			return false
-	return true
-
-func _rotate_active_piece_cw_no_kick() -> void:
-	var p := _get_active_polyomino()
-	if p == null:
-		return
-	var preview: Array[Vector2] = p.preview_rotate_clockwise()
-	if _shape_fits_bounds(p, preview):
-		p.apply_offsets(preview)  # rotate; no position change
-	# else: ignore input (no kick)
-
-func _rotate_active_piece_ccw_no_kick() -> void:
-	var p := _get_active_polyomino()
-	if p == null:
-		return
-	var preview: Array[Vector2] = p.preview_rotate_counterclockwise()
-	if _shape_fits_bounds(p, preview):
-		p.apply_offsets(preview)
+func _spawn_test_polyomino() -> void:
+	_spawn_from_id(_pick_random_id())
 
 func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
-	var s: Dictionary = PolyData.get_shape_with_color(id)
+	var s: Dictionary = POLY_DATA.get_shape_with_color(id)
 	if s.is_empty():
 		push_warning("Unknown shape id: %s" % id)
 		return
-
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
-
 	var blocks: Array = s["blocks"]
 	var color: Color = s["color"]
 	poly.initialize(cell_size, at_grid, blocks, color)
-
 	_coerce_piece_into_horizontal_bounds(poly)
 	_update_cell_size_for_children()
 
-
-# 2) Dynamic dropdown built from PolyominoData.SHAPES via the static get_all()
 func _get_property_list() -> Array:
 	var list: Array = []
-
 	var ids: Array[String] = []
-	# Call the STATIC method directly on the preloaded script
-	var shapes: Array = PolyData.get_all()
+	var shapes: Array = POLY_DATA.get_all()
 	for s in shapes:
 		if s.has("id"):
 			ids.append(String(s["id"]))
 	ids.sort()
-
-	# Fallback (optional)
 	if ids.is_empty():
 		ids = ["M1","D2","I3","L3","F5","X5","W5","T5","U5","V5","P5","N5","Y5","Z5","L5","I5"]
-
 	list.append({
 		"name": "default_spawn_id",
 		"type": TYPE_STRING,
@@ -317,7 +240,7 @@ func _get_property_list() -> Array:
 
 func _all_shape_ids() -> Array[String]:
 	var ids: Array[String] = []
-	for s in PolyData.get_all():
+	for s in POLY_DATA.get_all():
 		if s.has("id"):
 			ids.append(String(s["id"]))
 	return ids
@@ -327,13 +250,6 @@ func _pick_random_id() -> String:
 	if ids.is_empty():
 		return default_spawn_id
 	return ids[_rng.randi_range(0, ids.size() - 1)]
-
-func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	var base := Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
-	for off in piece.block_offsets:
-		cells.append(base + Vector2i(int(off.x), int(off.y)))
-	return cells
 
 func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
 	var cells := _piece_cells(piece)
@@ -346,14 +262,27 @@ func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
 	return false
 
 func _lock_piece(piece: Polyomino) -> void:
-	# Merge cells into occupied
 	for c in _piece_cells(piece):
-		_occupied[c] = true  # store color later if you want line clears etc.
-
-	# Move the node to inactive so it no longer gets updated
+		_occupied[c] = true
 	if piece.get_parent() != inactive_container:
 		piece.get_parent().remove_child(piece)
 		inactive_container.add_child(piece)
-
-	# Spawn next piece at the top (random id)
 	_spawn_from_id(_pick_random_id())
+
+func _refresh_deferred() -> void:
+	call_deferred("_refresh_overlay")
+
+func _refresh_overlay() -> void:
+	if is_instance_valid(grid_overlay):
+		grid_overlay.refresh()
+
+func _update_cell_size_for_children() -> void:
+	if not is_instance_valid(polyomino_container):
+		return
+	for poly in polyomino_container.get_children():
+		if poly.has_method("set_cell_size"):
+			poly.set_cell_size(cell_size)
+			if poly.has_method("set_shape") and "blocks" in poly and "color" in poly:
+				poly.set_shape(poly.blocks, poly.color)
+	_coerce_all_pieces_into_bounds()
+	_refresh_overlay()

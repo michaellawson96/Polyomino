@@ -35,11 +35,8 @@ func _update_position() -> void:
 	position = (grid_position * cell_size).floor()
 
 func _redraw_blocks() -> void:
-	# Clear old blocks
 	for child in get_children():
 		child.queue_free()
-
-	# Spawn new blocks
 	for offset in block_offsets:
 		var block = block_scene.instantiate()
 		add_child(block)
@@ -51,7 +48,6 @@ func is_polyomino() -> bool:
 
 func get_block_cells() -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
-	# Treat offsets as cell coords (same as you use when drawing)
 	for off in block_offsets:
 		var ox := int(off.x)
 		var oy := int(off.y)
@@ -62,21 +58,21 @@ func preview_rotate_clockwise() -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	for i in range(block_offsets.size()):
 		var off: Vector2 = block_offsets[i]
-		out.append(Vector2(off.y, -off.x))  # (x, y) -> (y, -x)
+		out.append(Vector2(off.y, -off.x))
 	return out
 
 func preview_rotate_counterclockwise() -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	for i in range(block_offsets.size()):
 		var off: Vector2 = block_offsets[i]
-		out.append(Vector2(-off.y, off.x))  # (x, y) -> (-y, x)
+		out.append(Vector2(-off.y, off.x))
 	return out
 	
 func preview_flip_horizontal() -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	for i in range(block_offsets.size()):
 		var off: Vector2 = block_offsets[i]
-		out.append(Vector2(-off.x, off.y)) # mirror across Y-axis
+		out.append(Vector2(-off.x, off.y))
 	return out
 
 func apply_offsets(new_offsets: Array[Vector2]) -> void:
