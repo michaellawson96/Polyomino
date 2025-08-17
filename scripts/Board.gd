@@ -20,6 +20,7 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 		_update_cell_size_for_children()
 		_refresh_deferred()
 @export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
+@export_range(1.0, 20.0, 0.5) var soft_drop_multiplier: float = 5.0
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 @export var conveyor_step_ms: int = 150
 @export var spawn_top_row: int = 0
@@ -54,7 +55,10 @@ func _process(delta: float) -> void:
 		return
 	if fall_rate == 0.0:
 		return
-	_accum_cells += delta * fall_rate
+	var rate := fall_rate
+	if _state == GameState.ACTIVE_CONTROLLED and Input.is_action_pressed("ui_down"):
+		rate *= soft_drop_multiplier
+	_accum_cells += delta * rate
 	while _accum_cells >= 1.0:
 		_accum_cells -= 1.0
 		_step_fall(1)
