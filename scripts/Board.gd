@@ -24,6 +24,10 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 @export var conveyor_step_ms: int = 150
 @export var spawn_top_row: int = 0
+@export var hold_start_delay_ms: int = 200
+@export var hold_repeat_interval_ms: int = 40
+@export var most_recent_press_wins: bool = true
+
 
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
@@ -37,6 +41,11 @@ var _state: int = GameState.ACTIVE_CONTROLLED
 var _conveyor_accum_ms: int = 0
 var _fully_on_grid_once: bool = false
 var _precreated_next_id: String = ""
+var _hold_left: bool = false
+var _hold_right: bool = false
+var _hold_dir: int = 0
+var _hold_timer_ms: int = -1
+
 
 func _ready():
 	if Engine.is_editor_hint():
@@ -53,6 +62,11 @@ func _process(delta: float) -> void:
 	if _state == GameState.PRECONTROL_AUTOSLIDE:
 		_update_precontrol(delta)
 		return
+	if _state == GameState.ACTIVE_CONTROLLED and _hold_dir != 0 and (_hold_left or _hold_right):
+		_hold_timer_ms -= int(delta * 1000.0)
+		while _hold_timer_ms <= 0:
+			_try_nudge_active(_hold_dir)
+			_hold_timer_ms += hold_repeat_interval_ms
 	if fall_rate == 0.0:
 		return
 	var rate := fall_rate
@@ -70,16 +84,41 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _state != GameState.ACTIVE_CONTROLLED:
 		return
 	if event.is_action_pressed("ui_left"):
-		_nudge_active_piece(-1)
-	elif event.is_action_pressed("ui_right"):
-		_nudge_active_piece(1)
+		_hold_left = true
+		if most_recent_press_wins or _hold_dir == 0:
+			_hold_dir = -1
+		_try_nudge_active(-1)
+		_hold_timer_ms = hold_start_delay_ms
+	if event.is_action_pressed("ui_right"):
+		_hold_right = true
+		if most_recent_press_wins or _hold_dir == 0:
+			_hold_dir = 1
+		_try_nudge_active(1)
+		_hold_timer_ms = hold_start_delay_ms
+	if event.is_action_released("ui_left"):
+		_hold_left = false
+		if _hold_right:
+			_hold_dir = 1
+			if _hold_timer_ms < 0:
+				_hold_timer_ms = hold_repeat_interval_ms
+		else:
+			_hold_dir = 0
+			_hold_timer_ms = -1
+	if event.is_action_released("ui_right"):
+		_hold_right = false
+		if _hold_left:
+			_hold_dir = -1
+			if _hold_timer_ms < 0:
+				_hold_timer_ms = hold_repeat_interval_ms
+		else:
+			_hold_dir = 0
+			_hold_timer_ms = -1
 	if event.is_action_pressed("rotate_cw"):
 		_rotate_active_piece_cw_no_kick()
 	elif event.is_action_pressed("rotate_ccw"):
 		_rotate_active_piece_ccw_no_kick()
 	elif event.is_action_pressed("flip_h"):
 		_flip_active_piece_horizontal_no_kick()
-
 
 func _update_precontrol(delta: float) -> void:
 	var piece := _get_active_polyomino()
@@ -109,8 +148,13 @@ func _update_precontrol(delta: float) -> void:
 
 func _grant_control() -> void:
 	_state = GameState.ACTIVE_CONTROLLED
+	_hold_left = false
+	_hold_right = false
+	_hold_dir = 0
+	_hold_timer_ms = -1
 	if _precreated_next_id == "":
 		_precreated_next_id = _pick_random_id()
+
 
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
@@ -133,6 +177,17 @@ func _nudge_active_piece(dir: int) -> void:
 	if not _would_collide(piece, Vector2i(dir, 0)):
 		piece.grid_position.x += dir
 		piece.position = (piece.grid_position * piece.cell_size).floor()
+
+func _try_nudge_active(dir: int) -> bool:
+	var piece := _get_active_polyomino()
+	if piece == null:
+		return false
+	if _would_collide(piece, Vector2i(dir, 0)):
+		return false
+	piece.grid_position.x += dir
+	piece.position = (piece.grid_position * piece.cell_size).floor()
+	return true
+
 
 func _get_active_polyomino() -> Polyomino:
 	var count := polyomino_container.get_child_count()
@@ -262,6 +317,10 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		_conveyor_accum_ms = 0
 		_fully_on_grid_once = false
 		_precreated_next_id = ""
+		_hold_left = false
+		_hold_right = false
+		_hold_dir = 0
+		_hold_timer_ms = -1
 	else:
 		_state = GameState.ACTIVE_CONTROLLED
 

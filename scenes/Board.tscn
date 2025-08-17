@@ -11,6 +11,9 @@ cell_size = 38
 soft_drop_multiplier = null
 conveyor_step_ms = null
 spawn_top_row = null
+hold_start_delay_ms = null
+hold_repeat_interval_ms = null
+most_recent_press_wins = null
 default_spawn_id = "T5"
 
 [node name="PolyominoContainer" type="Node2D" parent="."]
