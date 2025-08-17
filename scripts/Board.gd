@@ -1,6 +1,8 @@
 @tool
 extends Node2D
 
+enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR }
+
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 
 @export_range(1, 100) var board_width: int = 10:
@@ -19,6 +21,8 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 		_refresh_deferred()
 @export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
+@export var conveyor_step_ms: int = 150
+@export var spawn_top_row: int = 0
 
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
@@ -28,6 +32,10 @@ var _occupied: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var default_spawn_id: String = "I3"
 var _accum_cells: float = 0.0
+var _state: int = GameState.ACTIVE_CONTROLLED
+var _conveyor_accum_ms: int = 0
+var _fully_on_grid_once: bool = false
+var _precreated_next_id: String = ""
 
 func _ready():
 	if Engine.is_editor_hint():
@@ -37,10 +45,13 @@ func _ready():
 		inactive_container.name = "InactiveContainer"
 		add_child(inactive_container)
 	_rng.randomize()
-	_spawn_test_polyomino()
+	_spawn_from_id(_pick_random_id())
 	_refresh_overlay()
 
 func _process(delta: float) -> void:
+	if _state == GameState.PRECONTROL_AUTOSLIDE:
+		_update_precontrol(delta)
+		return
 	if fall_rate == 0.0:
 		return
 	_accum_cells += delta * fall_rate
@@ -52,6 +63,8 @@ func _process(delta: float) -> void:
 		_step_fall(-1)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _state != GameState.ACTIVE_CONTROLLED:
+		return
 	if event.is_action_pressed("ui_left"):
 		_nudge_active_piece(-1)
 	elif event.is_action_pressed("ui_right"):
@@ -62,6 +75,38 @@ func _unhandled_input(event: InputEvent) -> void:
 		_rotate_active_piece_ccw_no_kick()
 	elif event.is_action_pressed("flip_h"):
 		_flip_active_piece_horizontal_no_kick()
+
+
+func _update_precontrol(delta: float) -> void:
+	var piece := _get_active_polyomino()
+	if piece == null:
+		return
+	if Input.is_action_just_pressed("ui_down"):
+		_grant_control()
+		return
+	_conveyor_accum_ms += int(delta * 1000.0)
+	while _conveyor_accum_ms >= conveyor_step_ms:
+		_conveyor_accum_ms -= conveyor_step_ms
+		if not _is_fully_inside_left_wall(piece):
+			piece.grid_position.x += 1
+			piece.position = (piece.grid_position * piece.cell_size).floor()
+			if _is_fully_inside_left_wall(piece) and not _fully_on_grid_once:
+				_snap_piece_to_top_lane(piece)
+				_fully_on_grid_once = true
+				if _precreated_next_id == "":
+					_precreated_next_id = _pick_random_id()
+			return
+		if _can_step_right_in_top_lane(piece):
+			piece.grid_position.x += 1
+			piece.position = (piece.grid_position * piece.cell_size).floor()
+		else:
+			_grant_control()
+			return
+
+func _grant_control() -> void:
+	_state = GameState.ACTIVE_CONTROLLED
+	if _precreated_next_id == "":
+		_precreated_next_id = _pick_random_id()
 
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
@@ -190,10 +235,7 @@ func _coerce_all_pieces_into_bounds() -> void:
 	for p in get_polyomino_children():
 		_coerce_piece_into_horizontal_bounds(p)
 
-func _spawn_test_polyomino() -> void:
-	_spawn_from_id(_pick_random_id())
-
-func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
+func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 	var s: Dictionary = POLY_DATA.get_shape_with_color(id)
 	if s.is_empty():
 		push_warning("Unknown shape id: %s" % id)
@@ -202,9 +244,22 @@ func _spawn_from_id(id: String, at_grid: Vector2 = Vector2(3, 2)) -> void:
 	polyomino_container.add_child(poly)
 	var blocks: Array = s["blocks"]
 	var color: Color = s["color"]
-	poly.initialize(cell_size, at_grid, blocks, color)
-	_coerce_piece_into_horizontal_bounds(poly)
+	var min_x := 999999
+	var max_y := -999999
+	for off in blocks:
+		min_x = min(min_x, int(off.x))
+		max_y = max(max_y, int(off.y))
+	var start_x := -min_x - 1
+	var start_y := -max_y - 1
+	poly.initialize(cell_size, Vector2(start_x, start_y), blocks, color)
 	_update_cell_size_for_children()
+	if use_precontrol:
+		_state = GameState.PRECONTROL_AUTOSLIDE
+		_conveyor_accum_ms = 0
+		_fully_on_grid_once = false
+		_precreated_next_id = ""
+	else:
+		_state = GameState.ACTIVE_CONTROLLED
 
 func _get_property_list() -> Array:
 	var list: Array = []
@@ -239,14 +294,40 @@ func _pick_random_id() -> String:
 	return ids[_rng.randi_range(0, ids.size() - 1)]
 
 func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
-	var cells := _piece_cells(piece)
-	for c in cells:
-		var nx := c.x + delta.x
-		var ny := c.y + delta.y
-		if nx < 0 or nx >= board_width: return true
-		if ny < 0 or ny >= board_height: return true
-		if _occupied.has(Vector2i(nx, ny)): return true
+	var base_x := int(piece.grid_position.x)
+	var base_y := int(piece.grid_position.y)
+	for off in piece.block_offsets:
+		var nx := base_x + int(off.x) + delta.x
+		var ny := base_y + int(off.y) + delta.y
+		if nx < 0 or nx >= board_width:
+			return true
+		if ny >= board_height:
+			return true
+		if ny >= 0 and _occupied.has(Vector2i(nx, ny)):
+			return true
 	return false
+
+func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
+	var base_x := int(piece.grid_position.x)
+	for off in piece.block_offsets:
+		if base_x + int(off.x) < 0:
+			return false
+	return true
+
+func _snap_piece_to_top_lane(piece: Polyomino) -> void:
+	var min_local_y := 999999
+	for off in piece.block_offsets:
+		min_local_y = min(min_local_y, int(off.y))
+	piece.grid_position.y = spawn_top_row - min_local_y
+	piece.position = (piece.grid_position * piece.cell_size).floor()
+	
+func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
+	var base_x := int(piece.grid_position.x)
+	for off in piece.block_offsets:
+		var nx := base_x + 1 + int(off.x)
+		if nx >= board_width:
+			return false
+	return true
 
 func _lock_piece(piece: Polyomino) -> void:
 	for c in _piece_cells(piece):
@@ -254,7 +335,9 @@ func _lock_piece(piece: Polyomino) -> void:
 	if piece.get_parent() != inactive_container:
 		piece.get_parent().remove_child(piece)
 		inactive_container.add_child(piece)
-	_spawn_from_id(_pick_random_id())
+	var next_id := _precreated_next_id if _precreated_next_id != "" else _pick_random_id()
+	_precreated_next_id = ""
+	_spawn_from_id(next_id, true)
 
 func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
