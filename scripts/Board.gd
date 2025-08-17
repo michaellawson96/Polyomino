@@ -4,6 +4,7 @@ extends Node2D
 enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR }
 
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
+const GhostOutline := preload("res://scripts/GhostOutline.gd")
 
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
@@ -28,7 +29,6 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 @export var hold_repeat_interval_ms: int = 40
 @export var most_recent_press_wins: bool = true
 
-
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
@@ -45,6 +45,7 @@ var _hold_left: bool = false
 var _hold_right: bool = false
 var _hold_dir: int = 0
 var _hold_timer_ms: int = -1
+var ghost_overlay: GhostOutline
 
 
 func _ready():
@@ -57,11 +58,15 @@ func _ready():
 	_rng.randomize()
 	_spawn_from_id(_pick_random_id())
 	_refresh_overlay()
+	ghost_overlay = GhostOutline.new()
+	add_child(ghost_overlay)
+	ghost_overlay.visible = false
 
 func _process(delta: float) -> void:
 	if _state == GameState.PRECONTROL_AUTOSLIDE:
 		_update_precontrol(delta)
 		return
+	_update_ghost()
 	if _state == GameState.ACTIVE_CONTROLLED and _hold_dir != 0 and (_hold_left or _hold_right):
 		_hold_timer_ms -= int(delta * 1000.0)
 		while _hold_timer_ms <= 0:
@@ -330,6 +335,8 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		_hold_right = false
 		_hold_dir = 0
 		_hold_timer_ms = -1
+		if ghost_overlay != null:
+			ghost_overlay.visible = false
 	else:
 		_state = GameState.ACTIVE_CONTROLLED
 
@@ -431,6 +438,9 @@ func _lock_piece(piece: Polyomino) -> void:
 	var next_id := _precreated_next_id if _precreated_next_id != "" else _pick_random_id()
 	_precreated_next_id = ""
 	_spawn_from_id(next_id, true)
+	if ghost_overlay != null:
+		ghost_overlay.visible = false
+
 
 func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
@@ -449,3 +459,20 @@ func _update_cell_size_for_children() -> void:
 				poly.set_shape(poly.blocks, poly.color)
 	_coerce_all_pieces_into_bounds()
 	_refresh_overlay()
+
+func _update_ghost() -> void:
+	if ghost_overlay == null:
+		return
+	if _state != GameState.ACTIVE_CONTROLLED:
+		ghost_overlay.visible = false
+		return
+	var p := _get_active_polyomino()
+	if p == null:
+		ghost_overlay.visible = false
+		return
+	var dy := _compute_hard_drop_delta(p)
+	var base := Vector2i(int(p.grid_position.x), int(p.grid_position.y + dy))
+	ghost_overlay.visible = true
+	ghost_overlay.set_style(p.cell_size, Color(1, 1, 1, 0.6))
+	ghost_overlay.set_shape(p.block_offsets)
+	ghost_overlay.set_base(base)
