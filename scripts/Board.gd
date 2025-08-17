@@ -83,6 +83,9 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _state != GameState.ACTIVE_CONTROLLED:
 		return
+	if event.is_action_pressed("hard_drop"):
+		_hard_drop_active()
+		return
 	if event.is_action_pressed("ui_left"):
 		_hold_left = true
 		if most_recent_press_wins or _hold_dir == 0:
@@ -391,6 +394,25 @@ func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
 		if nx >= board_width:
 			return false
 	return true
+
+func _compute_hard_drop_delta(piece: Polyomino) -> int:
+	var dy := 0
+	while not _would_collide(piece, Vector2i(0, dy + 1)):
+		dy += 1
+	return dy
+
+func _hard_drop_active() -> void:
+	if _state != GameState.ACTIVE_CONTROLLED:
+		return
+	var p := _get_active_polyomino()
+	if p == null:
+		return
+	var dy := _compute_hard_drop_delta(p)
+	if dy > 0:
+		p.grid_position.y += dy
+		p.position = (p.grid_position * p.cell_size).floor()
+	_lock_piece(p)
+
 
 func _lock_piece(piece: Polyomino) -> void:
 	for c in _piece_cells(piece):
