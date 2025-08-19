@@ -22,6 +22,9 @@ const GhostOutline := preload("res://scripts/GhostOutline.gd")
 		_refresh_deferred()
 @export_range(-10.0, 10.0, 0.1) var fall_rate: float = 1.0
 @export_range(1.0, 20.0, 0.5) var soft_drop_multiplier: float = 5.0
+@export_range(0.01, 0.30, 0.005) var clear_block_duration: float = 0.06
+@export_range(0.00, 0.20, 0.005) var clear_block_gap: float = 0.02 
+@export_range(0.00, 0.20, 0.005) var clear_row_gap: float = 0.04
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 @export var conveyor_step_ms: int = 150
 @export var spawn_top_row: int = 0
@@ -32,6 +35,7 @@ const GhostOutline := preload("res://scripts/GhostOutline.gd")
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
+@onready var block_scene: PackedScene = preload("res://prefabs/Block.tscn")
 
 var _occupied: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
@@ -46,7 +50,6 @@ var _hold_right: bool = false
 var _hold_dir: int = 0
 var _hold_timer_ms: int = -1
 var ghost_overlay: GhostOutline
-
 
 func _ready():
 	if Engine.is_editor_hint():
@@ -72,10 +75,12 @@ func _process(delta: float) -> void:
 		while _hold_timer_ms <= 0:
 			_try_nudge_active(_hold_dir)
 			_hold_timer_ms += hold_repeat_interval_ms
+	if _state != GameState.ACTIVE_CONTROLLED:
+		return
 	if fall_rate == 0.0:
 		return
 	var rate := fall_rate
-	if _state == GameState.ACTIVE_CONTROLLED and Input.is_action_pressed("ui_down"):
+	if Input.is_action_pressed("ui_down"):
 		rate *= soft_drop_multiplier
 	_accum_cells += delta * rate
 	while _accum_cells >= 1.0:
@@ -84,6 +89,7 @@ func _process(delta: float) -> void:
 	while _accum_cells <= -1.0:
 		_accum_cells += 1.0
 		_step_fall(-1)
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _state != GameState.ACTIVE_CONTROLLED:
@@ -167,7 +173,6 @@ func _grant_control() -> void:
 	if _precreated_next_id == "":
 		_precreated_next_id = _pick_random_id()
 
-
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
 		if dir > 0:
@@ -199,7 +204,6 @@ func _try_nudge_active(dir: int) -> bool:
 	piece.grid_position.x += dir
 	piece.position = (piece.grid_position * piece.cell_size).floor()
 	return true
-
 
 func _get_active_polyomino() -> Polyomino:
 	var count := polyomino_container.get_child_count()
@@ -254,7 +258,6 @@ func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
 		if _occupied.has(Vector2i(nx, ny)):
 			return false
 	return true
-
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
@@ -426,21 +429,20 @@ func _hard_drop_active() -> void:
 		p.position = (p.grid_position * p.cell_size).floor()
 	_lock_piece(p)
 
-
 func _lock_piece(piece: Polyomino) -> void:
+	var color_to_use: Color = piece.block_color if "block_color" in piece else Color.WHITE
 	for c in _piece_cells(piece):
-		_occupied[c] = true
-	piece.show_origin = false
-	piece._update_origin_marker()
-	if piece.get_parent() != inactive_container:
-		piece.get_parent().remove_child(piece)
-		inactive_container.add_child(piece)
+		var b: Block = block_scene.instantiate()
+		inactive_container.add_child(b)
+		b.position = (Vector2(c) * cell_size).floor()
+		b.set_visual(cell_size, color_to_use)
+		_occupied[c] = b
+	if is_instance_valid(piece):
+		piece.queue_free()
 	var next_id := _precreated_next_id if _precreated_next_id != "" else _pick_random_id()
 	_precreated_next_id = ""
-	_spawn_from_id(next_id, true)
-	if ghost_overlay != null:
-		ghost_overlay.visible = false
-
+	_start_line_clear_if_needed(next_id)
+	
 
 func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
@@ -476,3 +478,74 @@ func _update_ghost() -> void:
 	ghost_overlay.set_style(p.cell_size, Color(1, 1, 1, 0.6))
 	ghost_overlay.set_shape(p.block_offsets)
 	ghost_overlay.set_base(base)
+
+func _start_line_clear_if_needed(next_id: String) -> void:
+	var rows := _find_full_rows()
+
+	if rows.is_empty():
+		_spawn_from_id(next_id, true)
+		return
+	_state = GameState.LINE_CLEAR
+	call_deferred("_run_line_clear", rows, next_id)
+
+func _find_full_rows() -> Array[int]:
+	var counts := {}
+	for cell in _occupied.keys():
+		if cell.y >= 0 and cell.y < board_height:
+			counts[cell.y] = int(counts.get(cell.y, 0)) + 1
+	var rows: Array[int] = []
+	for y in counts.keys():
+		if int(counts[y]) == board_width:
+			rows.append(int(y))
+	rows.sort()
+	rows.reverse()
+	return rows
+
+func _run_line_clear(rows: Array[int], next_id: String) -> void:
+	for i in rows.size():
+		var y := rows[i]
+		await _clear_row_animate(y)
+		_collapse_above(y)
+		for j in range(i + 1, rows.size()):
+			rows[j] += 1
+		if clear_row_gap > 0.0:
+			await get_tree().create_timer(clear_row_gap).timeout
+	_spawn_from_id(next_id, true)
+	_state = GameState.PRECONTROL_AUTOSLIDE
+	if ghost_overlay != null:
+		ghost_overlay.visible = false
+
+func _clear_row_animate(y: int) -> void:
+	for x in range(board_width):
+		var cell := Vector2i(x, y)
+		if not _occupied.has(cell):
+			continue
+		var block := _occupied[cell] as Block
+		if block == null or not is_instance_valid(block):
+			_occupied.erase(cell)
+			continue
+		var rect: ColorRect = block.color_rect
+		if rect != null:
+			rect.pivot_offset = rect.size * 0.5
+			rect.scale = Vector2.ONE
+			var tw := create_tween()
+			tw.tween_property(rect, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			await tw.finished
+		_occupied.erase(cell)
+		if is_instance_valid(block):
+			block.queue_free()
+		if clear_block_gap > 0.0 and x < board_width - 1:
+			await get_tree().create_timer(clear_block_gap).timeout
+
+func _collapse_above(cleared_y: int) -> void:
+	for y in range(cleared_y - 1, -1, -1):
+		for x in range(board_width):
+			var from := Vector2i(x, y)
+			if not _occupied.has(from):
+				continue
+			var blk := _occupied[from] as Block
+			_occupied.erase(from)
+			var to := Vector2i(x, y + 1)
+			_occupied[to] = blk
+			if blk != null and is_instance_valid(blk):
+				blk.position = (Vector2(to) * cell_size).floor()
