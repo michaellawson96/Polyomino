@@ -25,6 +25,8 @@ const GhostOutline := preload("res://scripts/GhostOutline.gd")
 @export_range(0.01, 0.30, 0.005) var clear_block_duration: float = 0.06
 @export_range(0.00, 0.20, 0.005) var clear_block_gap: float = 0.02 
 @export_range(0.00, 0.20, 0.005) var clear_row_gap: float = 0.04
+@export_range(0.0,10.0,0.1) var rubble_jitter_px: float = 3.0
+@export_range(0.1,1.0,0.05) var rubble_opacity: float = 0.95
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 @export var conveyor_step_ms: int = 150
 @export var spawn_top_row: int = 0
@@ -49,6 +51,7 @@ var _hold_left: bool = false
 var _hold_right: bool = false
 var _hold_dir: int = 0
 var _hold_timer_ms: int = -1
+var _next_piece_id: int = 1
 var ghost_overlay: GhostOutline
 
 func _ready():
@@ -430,19 +433,22 @@ func _hard_drop_active() -> void:
 	_lock_piece(p)
 
 func _lock_piece(piece: Polyomino) -> void:
+	var pid := _next_piece_id
+	_next_piece_id += 1
 	var color_to_use: Color = piece.block_color if "block_color" in piece else Color.WHITE
 	for c in _piece_cells(piece):
 		var b: Block = block_scene.instantiate()
 		inactive_container.add_child(b)
 		b.position = (Vector2(c) * cell_size).floor()
 		b.set_visual(cell_size, color_to_use)
+		b.set_grid_cell(c)
+		b.set_piece_id(pid)
 		_occupied[c] = b
 	if is_instance_valid(piece):
 		piece.queue_free()
 	var next_id := _precreated_next_id if _precreated_next_id != "" else _pick_random_id()
 	_precreated_next_id = ""
 	_start_line_clear_if_needed(next_id)
-	
 
 func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
@@ -504,7 +510,8 @@ func _find_full_rows() -> Array[int]:
 func _run_line_clear(rows: Array[int], next_id: String) -> void:
 	for i in rows.size():
 		var y := rows[i]
-		await _clear_row_animate(y)
+		var cut_ids: Array[int] = await _clear_row_animate(y)
+		_convert_survivors_to_rubble(cut_ids)
 		_collapse_above(y)
 		for j in range(i + 1, rows.size()):
 			rows[j] += 1
@@ -515,27 +522,58 @@ func _run_line_clear(rows: Array[int], next_id: String) -> void:
 	if ghost_overlay != null:
 		ghost_overlay.visible = false
 
-func _clear_row_animate(y: int) -> void:
+func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
+	if cut_ids.is_empty():
+		return
+	var pid_set := {}
+	for id in cut_ids:
+		pid_set[id] = true
+	for cell in _occupied.keys():
+		var b := _occupied[cell] as Block
+		if b == null or not is_instance_valid(b):
+			continue
+		if pid_set.has(b.piece_id):
+			var seed: int = abs(int(Time.get_ticks_msec()) + cell.x * 73856093 + cell.y * 19349663 + b.piece_id * 83492791)
+			var col: Color
+			if b.color_rect != null:
+				col = b.color_rect.color
+			else:
+				col = Color.WHITE
+			b.set_rubble(true, rubble_jitter_px, seed, rubble_opacity, col)
+
+func _clear_row_animate(y:int) -> Array[int]:
+	var cut_ids := {}
 	for x in range(board_width):
 		var cell := Vector2i(x, y)
 		if not _occupied.has(cell):
 			continue
 		var block := _occupied[cell] as Block
-		if block == null or not is_instance_valid(block):
+		if block != null and is_instance_valid(block):
+			cut_ids[block.piece_id] = true
+			var target: Node = block.get_shrink_target()
+			if target is ColorRect:
+				var rect: ColorRect = target as ColorRect
+				rect.pivot_offset = rect.size * 0.5
+				rect.scale = Vector2.ONE
+				var tw: Tween = create_tween()
+				tw.tween_property(rect, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+				await tw.finished
+			elif target is Node2D:
+				var tn := target as Node2D
+				tn.scale = Vector2.ONE
+				var tw2: Tween = create_tween()
+				tw2.tween_property(tn, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+				await tw2.finished
 			_occupied.erase(cell)
-			continue
-		var rect: ColorRect = block.color_rect
-		if rect != null:
-			rect.pivot_offset = rect.size * 0.5
-			rect.scale = Vector2.ONE
-			var tw := create_tween()
-			tw.tween_property(rect, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-			await tw.finished
-		_occupied.erase(cell)
-		if is_instance_valid(block):
 			block.queue_free()
+		else:
+			_occupied.erase(cell)
 		if clear_block_gap > 0.0 and x < board_width - 1:
 			await get_tree().create_timer(clear_block_gap).timeout
+	var out: Array[int] = []
+	for k in cut_ids.keys():
+		out.append(int(k))
+	return out
 
 func _collapse_above(cleared_y: int) -> void:
 	for y in range(cleared_y - 1, -1, -1):
@@ -549,3 +587,4 @@ func _collapse_above(cleared_y: int) -> void:
 			_occupied[to] = blk
 			if blk != null and is_instance_valid(blk):
 				blk.position = (Vector2(to) * cell_size).floor()
+				blk.set_grid_cell(to)
