@@ -10,7 +10,7 @@ signal score_changed(score:int)
 
 var score:int=0
 var chain:int=0
-var label:RichTextLabel
+var label:Label
 var panel:Panel
 var lines:Array[String]=[]
 
@@ -27,6 +27,8 @@ func _input(e:InputEvent)->void:
 func _make_ui()->void:
 	panel=Panel.new()
 	add_child(panel)
+	panel.focus_mode=Control.FOCUS_NONE
+	panel.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	panel.anchor_left=1.0
 	panel.anchor_top=0.0
 	panel.anchor_right=1.0
@@ -34,13 +36,32 @@ func _make_ui()->void:
 	panel.offset_left=-360
 	panel.offset_top=12
 	panel.offset_right=-12
-	panel.offset_bottom=260
-	label=RichTextLabel.new()
-	panel.add_child(label)
-	label.fit_content=true
-	label.size_flags_vertical=Control.SIZE_EXPAND_FILL
+	panel.offset_bottom=220
+	var container:=MarginContainer.new()
+	container.add_theme_constant_override("margin_left",8)
+	container.add_theme_constant_override("margin_top",8)
+	container.add_theme_constant_override("margin_right",8)
+	container.add_theme_constant_override("margin_bottom",8)
+	panel.add_child(container)
+	container.anchor_left=0.0
+	container.anchor_top=0.0
+	container.anchor_right=1.0
+	container.anchor_bottom=1.0
+	container.offset_left=0
+	container.offset_top=0
+	container.offset_right=0
+	container.offset_bottom=0
+	label=Label.new()
+	container.add_child(label)
+	label.focus_mode=Control.FOCUS_NONE
+	label.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	label.horizontal_alignment=HORIZONTAL_ALIGNMENT_LEFT
+	label.vertical_alignment=VERTICAL_ALIGNMENT_TOP
+	label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	label.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	_refresh()
+
 
 func _push(s:String)->void:
 	lines.append(s)
@@ -51,8 +72,7 @@ func _refresh()->void:
 	if label==null:return
 	var t=""
 	for s in lines:t+=s+"\n"
-	label.clear()
-	label.append_text(t)
+	label.text=t
 
 func note_rows_cleared(n:int)->void:
 	if n<=0:
