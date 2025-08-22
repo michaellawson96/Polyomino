@@ -5,6 +5,8 @@ enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR }
 
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const GhostOutline := preload("res://scripts/GhostOutline.gd")
+const BagService:=preload("res://scripts/BagService.gd")
+
 
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
@@ -52,17 +54,25 @@ var _hold_right: bool = false
 var _hold_dir: int = 0
 var _hold_timer_ms: int = -1
 var _next_piece_id: int = 1
+var bag:BagService
+var _pending_bag_ids:Array[String]=[]
+var _pending_bag_seed:int=0
+
 var ghost_overlay: GhostOutline
 
 func _ready():
 	if Engine.is_editor_hint():
 		return
+	add_to_group("board")
 	if inactive_container == null:
 		inactive_container = Node2D.new()
 		inactive_container.name = "InactiveContainer"
 		add_child(inactive_container)
 	_rng.randomize()
-	_spawn_from_id(_pick_random_id())
+	add_to_group("board")
+	bag=BagService.new()
+	bag.setup(_all_shape_ids(),0)
+	_spawn_from_id(_bag_next())
 	_refresh_overlay()
 	ghost_overlay = GhostOutline.new()
 	add_child(ghost_overlay)
@@ -158,7 +168,7 @@ func _update_precontrol(delta: float) -> void:
 				_snap_piece_to_top_lane(piece)
 				_fully_on_grid_once = true
 				if _precreated_next_id == "":
-					_precreated_next_id = _pick_random_id()
+					_precreated_next_id = _bag_next()
 			return
 		if _can_step_right_in_top_lane(piece):
 			piece.grid_position.x += 1
@@ -174,7 +184,7 @@ func _grant_control() -> void:
 	_hold_dir = 0
 	_hold_timer_ms = -1
 	if _precreated_next_id == "":
-		_precreated_next_id = _pick_random_id()
+		_precreated_next_id = _bag_next()
 
 func _step_fall(dir: int) -> void:
 	for piece in get_polyomino_children():
@@ -448,7 +458,15 @@ func _lock_piece(piece: Polyomino) -> void:
 		_occupied[c] = b
 	if is_instance_valid(piece):
 		piece.queue_free()
-	var next_id := _precreated_next_id if _precreated_next_id != "" else _pick_random_id()
+	var next_id: String
+	if _pending_bag_ids.size() > 0:
+		bag.setup(_pending_bag_ids, _pending_bag_seed)
+		_pending_bag_ids = []
+		_pending_bag_seed = 0
+		_precreated_next_id = ""
+		next_id = _bag_next()
+	else:
+		next_id = _precreated_next_id if _precreated_next_id != "" else _bag_next()
 	_precreated_next_id = ""
 	_start_line_clear_if_needed(next_id)
 
@@ -592,3 +610,13 @@ func _collapse_above(cleared_y: int) -> void:
 			if blk != null and is_instance_valid(blk):
 				blk.position = (Vector2(to) * cell_size).floor()
 				blk.set_grid_cell(to)
+
+func _bag_next() -> String:
+	var nxt: Variant = bag.next()
+	if nxt == null:
+		return default_spawn_id
+	return String(nxt)
+
+func reconfigure_bag(ids:Array[String],seed:int=0)->void:
+	_pending_bag_ids=ids.duplicate(true)
+	_pending_bag_seed=seed
