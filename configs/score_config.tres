@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ScoreConfig" load_steps=2 format=3 uid="uid://dlhrf5jri05lx"]
+
+[ext_resource type="Script" path="res://scripts/ScoreConfig.gd" id="1_bl32k"]
+
+[resource]
+script = ExtResource("1_bl32k")
+points_per_rows = Array[int]([0, 120, 360, 720, 1200])
+combo_step = 60
+hard_drop_per_cell = 2

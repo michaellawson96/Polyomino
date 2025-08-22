@@ -427,9 +427,11 @@ func _hard_drop_active() -> void:
 	if p == null:
 		return
 	var dy := _compute_hard_drop_delta(p)
+	
 	if dy > 0:
 		p.grid_position.y += dy
 		p.position = (p.grid_position * p.cell_size).floor()
+	Score.note_hard_drop(dy)
 	_lock_piece(p)
 
 func _lock_piece(piece: Polyomino) -> void:
@@ -487,8 +489,8 @@ func _update_ghost() -> void:
 
 func _start_line_clear_if_needed(next_id: String) -> void:
 	var rows := _find_full_rows()
-
 	if rows.is_empty():
+		Score.note_lock_no_clear()
 		_spawn_from_id(next_id, true)
 		return
 	_state = GameState.LINE_CLEAR
@@ -508,6 +510,8 @@ func _find_full_rows() -> Array[int]:
 	return rows
 
 func _run_line_clear(rows: Array[int], next_id: String) -> void:
+	var total:int=rows.size()
+	Score.note_rows_cleared(total)
 	for i in rows.size():
 		var y := rows[i]
 		var cut_ids: Array[int] = await _clear_row_animate(y)
