@@ -15,3 +15,5 @@ default_spawn_id = "T5"
 [node name="GridOverlay" parent="." instance=ExtResource("2_l7th0")]
 
 [node name="InactiveContainer" type="Node2D" parent="."]
+
+[node name="QueuedContainer" type="Node2D" parent="."]

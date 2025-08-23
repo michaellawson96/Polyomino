@@ -6,7 +6,9 @@ enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR }
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const GhostOutline := preload("res://scripts/GhostOutline.gd")
 const BagService:=preload("res://scripts/BagService.gd")
+const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
 
+signal next_preview(ids: Array[String])
 
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
@@ -39,6 +41,7 @@ const BagService:=preload("res://scripts/BagService.gd")
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
 @onready var polyomino_container := $PolyominoContainer
+@onready var queued_container := $QueuedContainer
 @onready var block_scene: PackedScene = preload("res://prefabs/Block.tscn")
 
 var _occupied: Dictionary = {}
@@ -57,7 +60,11 @@ var _next_piece_id: int = 1
 var bag:BagService
 var _pending_bag_ids:Array[String]=[]
 var _pending_bag_seed:int=0
-
+var _queued_piece: Polyomino = null
+var _queued_conveyor_accum_ms: int = 0
+var _queued_fully_on_grid_once: bool = false
+var _active_fully_in_grid_once: bool = false
+var _preview_updating: bool = false
 var ghost_overlay: GhostOutline
 
 func _ready():
@@ -83,6 +90,11 @@ func _process(delta: float) -> void:
 		_update_precontrol(delta)
 		return
 	_update_ghost()
+	if _state == GameState.ACTIVE_CONTROLLED:
+		var _p := _get_active_polyomino()
+		if _p != null and not _active_fully_in_grid_once and _is_piece_fully_in_grid(_p):
+			_active_fully_in_grid_once = true
+			_spawn_queued_if_needed()
 	if _state == GameState.ACTIVE_CONTROLLED and _hold_dir != 0 and (_hold_left or _hold_right):
 		_hold_timer_ms -= int(delta * 1000.0)
 		while _hold_timer_ms <= 0:
@@ -169,7 +181,8 @@ func _update_precontrol(delta: float) -> void:
 				_fully_on_grid_once = true
 				if _precreated_next_id == "":
 					_precreated_next_id = _bag_next()
-			return
+				_update_next_preview()
+				return
 		if _can_step_right_in_top_lane(piece):
 			piece.grid_position.x += 1
 			piece.position = (piece.grid_position * piece.cell_size).floor()
@@ -351,6 +364,7 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		_hold_right = false
 		_hold_dir = 0
 		_hold_timer_ms = -1
+		_active_fully_in_grid_once = false
 		if ghost_overlay != null:
 			ghost_overlay.visible = false
 	else:
@@ -458,17 +472,23 @@ func _lock_piece(piece: Polyomino) -> void:
 		_occupied[c] = b
 	if is_instance_valid(piece):
 		piece.queue_free()
-	var next_id: String
+	var next_choice: String
 	if _pending_bag_ids.size() > 0:
+		if _queued_piece != null:
+			_queued_piece.queue_free()
+			_queued_piece = null
 		bag.setup(_pending_bag_ids, _pending_bag_seed)
 		_pending_bag_ids = []
 		_pending_bag_seed = 0
 		_precreated_next_id = ""
-		next_id = _bag_next()
+		next_choice = _bag_next()
 	else:
-		next_id = _precreated_next_id if _precreated_next_id != "" else _bag_next()
+		if _queued_piece != null:
+			next_choice = PROMOTE_QUEUED_SENTINEL
+		else:
+			next_choice = _precreated_next_id if _precreated_next_id != "" else _bag_next()
 	_precreated_next_id = ""
-	_start_line_clear_if_needed(next_id)
+	_start_line_clear_if_needed(next_choice)
 
 func _refresh_deferred() -> void:
 	call_deferred("_refresh_overlay")
@@ -509,7 +529,13 @@ func _start_line_clear_if_needed(next_id: String) -> void:
 	var rows := _find_full_rows()
 	if rows.is_empty():
 		Score.note_lock_no_clear()
-		_spawn_from_id(next_id, true)
+		if next_id == PROMOTE_QUEUED_SENTINEL:
+			_promote_queued_to_active()
+			_state = GameState.PRECONTROL_AUTOSLIDE
+			if ghost_overlay != null:
+				ghost_overlay.visible = false
+		else:
+			_spawn_from_id(next_id, true)
 		return
 	_state = GameState.LINE_CLEAR
 	call_deferred("_run_line_clear", rows, next_id)
@@ -539,10 +565,14 @@ func _run_line_clear(rows: Array[int], next_id: String) -> void:
 			rows[j] += 1
 		if clear_row_gap > 0.0:
 			await get_tree().create_timer(clear_row_gap).timeout
-	_spawn_from_id(next_id, true)
+	if next_id == PROMOTE_QUEUED_SENTINEL:
+		_promote_queued_to_active()
+	else:
+		_spawn_from_id(next_id, true)
 	_state = GameState.PRECONTROL_AUTOSLIDE
 	if ghost_overlay != null:
 		ghost_overlay.visible = false
+
 
 func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 	if cut_ids.is_empty():
@@ -617,6 +647,80 @@ func _bag_next() -> String:
 		return default_spawn_id
 	return String(nxt)
 
-func reconfigure_bag(ids:Array[String],seed:int=0)->void:
-	_pending_bag_ids=ids.duplicate(true)
-	_pending_bag_seed=seed
+func reconfigure_bag(ids: Array[String], seed: int = 0) -> void:
+	_pending_bag_ids = ids.duplicate(true)
+	_pending_bag_seed = seed
+	_update_next_preview()
+
+func _update_next_preview() -> void:
+	if _preview_updating:
+		return
+	_preview_updating = true
+	var next_id: String = ""
+	if _pending_bag_ids.size() > 0:
+		var temp := BagService.new()
+		temp.setup(_pending_bag_ids, _pending_bag_seed)
+		var v0: Variant = temp.next()
+		if v0 != null:
+			next_id = String(v0)
+		else:
+			next_id = default_spawn_id
+	elif _precreated_next_id != "":
+		next_id = _precreated_next_id
+	elif bag != null:
+		var peeked: Array = bag.peek(1)
+		if peeked.size() > 0:
+			var v1: Variant = peeked[0]
+			next_id = String(v1)
+		else:
+			next_id = default_spawn_id
+	else:
+		next_id = default_spawn_id
+	emit_signal("next_preview", [next_id])
+	_preview_updating = false
+
+func _spawn_queued_if_needed() -> void:
+	if _queued_piece != null:
+		return
+	if _precreated_next_id == "":
+		return
+	var s: Dictionary = POLY_DATA.get_shape_with_color(_precreated_next_id)
+	if s.is_empty():
+		return
+	var blocks: Array[Vector2] = POLY_DATA.get_blocks(_precreated_next_id)
+	var color: Color = s["color"]
+	var min_x := 999999
+	var max_y := -999999
+	for off in blocks:
+		min_x = min(min_x, int(off.x))
+		max_y = max(max_y, int(off.y))
+	var start_x := -min_x
+	var start_y := -max_y - 1
+	var poly: Polyomino = polyomino_scene.instantiate()
+	queued_container.add_child(poly)
+	poly.initialize(cell_size, Vector2(start_x, start_y), blocks, color)
+	poly.show_origin = true
+	poly._update_origin_marker()
+	_queued_piece = poly
+	_queued_conveyor_accum_ms = 0
+	_queued_fully_on_grid_once = false
+
+func _promote_queued_to_active() -> void:
+	if _queued_piece == null:
+		_spawn_from_id(_bag_next(), true)
+		return
+	_active_fully_in_grid_once = false
+	if _queued_piece.get_parent() == queued_container:
+		queued_container.remove_child(_queued_piece)
+		polyomino_container.add_child(_queued_piece)
+	_state = GameState.PRECONTROL_AUTOSLIDE
+	_conveyor_accum_ms = 0
+	_fully_on_grid_once = false
+	_queued_piece = null
+	_update_next_preview()
+
+func _is_piece_fully_in_grid(p: Polyomino) -> bool:
+	var min_local_y := 999999
+	for off in p.block_offsets:
+		min_local_y = min(min_local_y, int(off.y))
+	return int(p.grid_position.y) + min_local_y >= 0
