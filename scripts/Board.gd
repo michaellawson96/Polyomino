@@ -279,11 +279,12 @@ func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
 		var ny := base_y + int(off.y)
 		if nx < 0 or nx >= board_width:
 			return false
-		if ny < 0 or ny >= board_height:
+		if ny >= board_height:
 			return false
-		if _occupied.has(Vector2i(nx, ny)):
+		if ny >= 0 and _occupied.has(Vector2i(nx, ny)):
 			return false
 	return true
+
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
