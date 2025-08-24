@@ -675,19 +675,124 @@ func _clear_span_animate(y:int, x0:int, x1:int, cleared:Dictionary) -> Array[int
 		out.append(int(k))
 	return out
 
-func _collapse_above(cleared_y: int) -> void:
-	for y in range(cleared_y - 1, -1, -1):
-		for x in range(board_width):
-			var from := Vector2i(x, y)
-			if not _occupied.has(from):
+func _collapse_above(cleared_y: int, spans: Array) -> void:
+	if cleared_y <= 0:
+		return
+	var colset: Dictionary = {}
+	for span in spans:
+		var s: Vector2i = span
+		for x in range(s.x, s.y + 1):
+			colset[x] = true
+	if colset.is_empty():
+		return
+	var col_list: Array = colset.keys()
+	col_list.sort()
+	var moved_piece_ids: Dictionary = {}
+	var moved_block_ids: Dictionary = {}
+	while true:
+		var reserved: Dictionary = {}
+		var moves: Array = []
+		var piece_cells: Dictionary = {}
+		var piece_intact: Dictionary = {}
+		var piece_has_col: Dictionary = {}
+		var piece_all_above: Dictionary = {}
+		for cell in _occupied.keys():
+			var blk: Block = _occupied[cell]
+			if blk == null or not is_instance_valid(blk):
 				continue
-			var blk := _occupied[from] as Block
-			_occupied.erase(from)
-			var to := Vector2i(x, y + 1)
-			_occupied[to] = blk
-			if blk != null and is_instance_valid(blk):
-				blk.position = (Vector2(to) * cell_size).floor()
-				blk.set_grid_cell(to)
+			var pid: int = blk.piece_id
+			if not piece_cells.has(pid):
+				piece_cells[pid] = []
+				piece_intact[pid] = true
+				piece_has_col[pid] = false
+				piece_all_above[pid] = true
+			(piece_cells[pid] as Array).append(cell)
+			if blk.rubble:
+				piece_intact[pid] = false
+			if colset.has(cell.x):
+				piece_has_col[pid] = true
+			if cell.y >= cleared_y:
+				piece_all_above[pid] = false
+		var decided_piece: Dictionary = {}
+		for y in range(cleared_y - 1, -1, -1):
+			for i in range(col_list.size()):
+				var x: int = int(col_list[i])
+				var pos := Vector2i(x, y)
+				if not _occupied.has(pos):
+					continue
+				var b: Block = _occupied[pos]
+				if b == null or not is_instance_valid(b):
+					_occupied.erase(pos)
+					continue
+				if b.rubble:
+					continue
+				var pid: int = b.piece_id
+				if moved_piece_ids.has(pid):
+					continue
+				if decided_piece.has(pid):
+					continue
+				if not piece_intact.get(pid, false):
+					continue
+				if not piece_has_col.get(pid, false):
+					continue
+				if not piece_all_above.get(pid, false):
+					continue
+				var cells: Array = piece_cells[pid]
+				var can_move: bool = true
+				for c in cells:
+					var to := Vector2i(c.x, c.y + 1)
+					if to.y >= board_height:
+						can_move = false
+						break
+					if reserved.has(to):
+						can_move = false
+						break
+					if _occupied.has(to):
+						var ob: Block = _occupied[to]
+						if ob == null or not is_instance_valid(ob) or ob.piece_id != pid:
+							can_move = false
+							break
+				if can_move:
+					for c in cells:
+						var to2 := Vector2i(c.x, c.y + 1)
+						moves.append({"from": c, "to": to2, "blk": _occupied[c]})
+						reserved[to2] = true
+					moved_piece_ids[pid] = true
+					decided_piece[pid] = true
+		for y in range(cleared_y - 1, -1, -1):
+			for i in range(col_list.size()):
+				var x2: int = int(col_list[i])
+				var from := Vector2i(x2, y)
+				if not _occupied.has(from):
+					continue
+				var rb: Block = _occupied[from]
+				if rb == null or not is_instance_valid(rb):
+					_occupied.erase(from)
+					continue
+				if moved_block_ids.has(rb.get_instance_id()):
+					continue
+				if not rb.rubble:
+					continue
+				var to3 := Vector2i(from.x, from.y + 1)
+				if to3.y >= board_height:
+					continue
+				if reserved.has(to3):
+					continue
+				if _occupied.has(to3):
+					continue
+				moves.append({"from": from, "to": to3, "blk": rb})
+				reserved[to3] = true
+				moved_block_ids[rb.get_instance_id()] = true
+		if moves.is_empty():
+			break
+		for m in moves:
+			_occupied.erase(m["from"])
+		for m in moves:
+			var dest: Vector2i = m["to"]
+			var bl: Block = m["blk"]
+			_occupied[dest] = bl
+			bl.position = (Vector2(dest) * cell_size).floor()
+			bl.set_grid_cell(dest)
 
 func _bag_next() -> String:
 	var nxt: Variant = bag.next()
@@ -937,6 +1042,8 @@ func _find_full_spans() -> Array[Dictionary]:
 	return result
 
 func _run_span_clear_cycle(spans: Array) -> void:
+	if spans.is_empty():
+		return
 	var by_row: Dictionary = {}
 	for d in spans:
 		var y: int = d["y"]
@@ -946,19 +1053,19 @@ func _run_span_clear_cycle(spans: Array) -> void:
 	var ys: Array[int] = int_dict_keys(by_row)
 	ys.sort()
 	ys.reverse()
-	for y in ys:
-		var row_spans: Array = by_row[y]
-		row_spans.sort_custom(func(a, b): return int(a["x0"]) < int(b["x0"]))
-		var cut_ids_row: Array[int] = []
-		var cleared_row := {}
-		for seg in row_spans:
-			var x0: int = seg["x0"]
-			var x1: int = seg["x1"]
-			var cut_ids_this := await _clear_span_animate(y, x0, x1, cleared_row)
-			for id in cut_ids_this:
-				cut_ids_row.append(id)
-		_convert_survivors_to_rubble(cut_ids_row)
-		_masked_collapse_after_clear_one_row(cleared_row, y, row_spans)
+	var y: int = ys[0]
+	var row_spans: Array = by_row[y]
+	row_spans.sort_custom(Callable(self, "_cmp_span_x0"))
+	var cut_ids_row: Array[int] = []
+	var cleared_row := {}
+	for seg in row_spans:
+		var x0: int = seg["x0"]
+		var x1: int = seg["x1"]
+		var cut_ids_this := await _clear_span_animate(y, x0, x1, cleared_row)
+		for id in cut_ids_this:
+			cut_ids_row.append(id)
+	_convert_survivors_to_rubble(cut_ids_row)
+	_masked_collapse_after_clear_one_row(cleared_row, y, row_spans)
 
 func int_dict_keys(d:Dictionary) -> Array[int]:
 	var out:Array[int]=[]
@@ -967,117 +1074,103 @@ func int_dict_keys(d:Dictionary) -> Array[int]:
 	return out
 
 func _masked_collapse_after_clear_one_row(cleared:Dictionary, cleared_y:int, spans_for_row:Array) -> void:
-	var cleared_cols:=_cleared_columns_for_row(spans_for_row)
-	var cleared_col_set:={} 
-	for x in cleared_cols: cleared_col_set[x]=true
-
-	var grouped:Dictionary={}
-	for cell in _occupied.keys():
-		var b:Block=_occupied[cell]
-		if b==null or not is_instance_valid(b): continue
-		var pid:int=b.piece_id
-		if not grouped.has(pid): grouped[pid]=[]
-		(grouped[pid] as Array).append(cell)
-
-	var intact_pids:=[]
-	var rubble_cells:=[]
-
-	for pid in grouped.keys():
-		var cells:Array=grouped[pid]
-		if cells.is_empty(): continue
-		var any_rubble:=false
-		var max_y:int=-99999
-		for c in cells:
-			var blk:Block=_occupied[c]
-			if blk.rubble: any_rubble=true
-			if int(c.y)>max_y: max_y=int(c.y)
-		if max_y>=cleared_y: 
-			continue
-		if any_rubble:
-			for c in cells:
-				var blk2:Block=_occupied[c]
-				if blk2.rubble and int(c.y)<cleared_y:
-					rubble_cells.append(c)
-		else:
-			intact_pids.append(pid)
-
-	intact_pids.sort_custom(func(a,b):
-		var ca:Array=grouped[a]; var cb:Array=grouped[b]
-		var ax:=99999; var ay:=-99999
-		var bx:=99999; var by:=-99999
-		for v in ca:
-			var vx:int=int(v.x); var vy:int=int(v.y)
-			if vy>ay: ay=vy
-			if vx<ax: ax=vx
-		for v2 in cb:
-			var vx2:int=int(v2.x); var vy2:int=int(v2.y)
-			if vy2>by: by=vy2
-			if vx2<bx: bx=vx2
-		return ay>by if ay!=by else ax<bx
-	)
-	rubble_cells.sort_custom(func(a,b):
-		var ya:int=int(a.y); var yb:int=int(b.y)
-		return ya>yb if ya!=yb else int(a.x)<int(b.x)
-	)
-
-	var moves_from:Array[Vector2i]=[]
-	var moves_to:Array[Vector2i]=[]
-	var move_blocks:Array[Block]=[]
-
-	for pid in intact_pids:
-		var cells:Array=grouped[pid]
-		var touches:=false
-		for c in cells:
-			if cleared_col_set.has(int(c.x)): touches=true; break
-		if not touches: 
-			continue
-		var corridor_ok:=true
-		for c in cells:
-			var x:int=int(c.x); var y:int=int(c.y)
-			if not _mask_corridor_clear_inclusive(x, y+1, cleared_y):
-				corridor_ok=false; break
-		if not corridor_ok: 
-			continue
-		var can_fall:=true
-		for c in cells:
-			var below:=Vector2i(int(c.x), int(c.y)+1)
-			if below.y>=board_height: can_fall=false; break
-			if below.y>=0 and not board_mask.is_playable(below.x,below.y): can_fall=false; break
-			if _occupied.has(below): can_fall=false; break
-		if not can_fall: 
-			continue
-		for c in cells:
-			var blk:Block=_occupied[c]
-			moves_from.append(Vector2i(int(c.x),int(c.y)))
-			moves_to.append(Vector2i(int(c.x),int(c.y)+1))
-			move_blocks.append(blk)
-
-	for c in rubble_cells:
-		var x:int=int(c.x); var y:int=int(c.y)
-		if not cleared_col_set.has(x): 
-			continue
-		if not _mask_corridor_clear_inclusive(x, y+1, cleared_y):
-			continue
-		var to:=Vector2i(x,y+1)
-		if to.y>=board_height: continue
-		if to.y>=0 and not board_mask.is_playable(to.x,to.y): continue
-		if _occupied.has(to): continue
-		var blk:Block=_occupied[c]
-		if blk==null or not is_instance_valid(blk): continue
-		moves_from.append(Vector2i(int(c.x),int(c.y)))
-		moves_to.append(to)
-		move_blocks.append(blk)
-
-	for i in moves_from.size():
-		var from:=moves_from[i]
-		var to:=moves_to[i]
-		var blk:=move_blocks[i]
-		if _occupied.has(from) and _occupied[from]==blk:
-			_occupied.erase(from)
-		_occupied[to]=blk
-		if blk.has_method("set_grid_cell"):
-			blk.set_grid_cell(to)
-		blk.position=(Vector2(to)*cell_size).floor()
+	var cleared_cols := _cleared_columns_for_row(spans_for_row)
+	if cleared_y <= 0 or cleared_cols.is_empty():
+		return
+	var colset: Dictionary = {}
+	for x in cleared_cols:
+		colset[x] = true
+	var col_list: Array = cleared_cols.duplicate()
+	col_list.sort()
+	var moved_piece_ids: Dictionary = {}
+	var moved_block_ids: Dictionary = {}
+	while true:
+		var moves: Array = []
+		var reserved: Dictionary = {}
+		var piece_cells: Dictionary = {}
+		var piece_intact: Dictionary = {}
+		var piece_has_col: Dictionary = {}
+		var piece_all_above: Dictionary = {}
+		for cell in _occupied.keys():
+			var blk: Block = _occupied[cell]
+			if blk == null or not is_instance_valid(blk):
+				continue
+			var pid: int = blk.piece_id
+			if not piece_cells.has(pid):
+				piece_cells[pid] = []
+				piece_intact[pid] = true
+				piece_has_col[pid] = false
+				piece_all_above[pid] = true
+			(piece_cells[pid] as Array).append(cell)
+			if blk.rubble:
+				piece_intact[pid] = false
+			if colset.has(cell.x):
+				piece_has_col[pid] = true
+			if int(cell.y) >= cleared_y:
+				piece_all_above[pid] = false
+		for y in range(cleared_y - 1, -1, -1):
+			for i in range(col_list.size()):
+				var x: int = int(col_list[i])
+				var pos := Vector2i(x, y)
+				if not _occupied.has(pos):
+					continue
+				var b: Block = _occupied[pos]
+				if b == null or not is_instance_valid(b):
+					_occupied.erase(pos)
+					continue
+				if moved_block_ids.has(b.get_instance_id()):
+					continue
+				if b.rubble:
+					var to_r := Vector2i(pos.x, pos.y + 1)
+					if to_r.y < board_height and board_mask.is_playable(to_r.x, to_r.y) and not reserved.has(to_r) and not _occupied.has(to_r):
+						moves.append({"from": pos, "to": to_r, "blk": b})
+						reserved[to_r] = true
+						moved_block_ids[b.get_instance_id()] = true
+					continue
+				var pid: int = b.piece_id
+				if moved_piece_ids.has(pid):
+					continue
+				if not piece_intact.get(pid, false):
+					continue
+				if not piece_has_col.get(pid, false):
+					continue
+				if not piece_all_above.get(pid, false):
+					continue
+				var cells: Array = piece_cells[pid]
+				var can_move: bool = true
+				for c in cells:
+					var to := Vector2i(int(c.x), int(c.y) + 1)
+					if to.y >= board_height:
+						can_move = false
+						break
+					if not board_mask.is_playable(to.x, to.y):
+						can_move = false
+						break
+					if reserved.has(to):
+						can_move = false
+						break
+					if _occupied.has(to):
+						var ob: Block = _occupied[to]
+						if ob == null or not is_instance_valid(ob) or ob.piece_id != pid:
+							can_move = false
+							break
+				if can_move:
+					for c2 in cells:
+						var to2 := Vector2i(int(c2.x), int(c2.y) + 1)
+						moves.append({"from": Vector2i(int(c2.x), int(c2.y)), "to": to2, "blk": _occupied[c2]})
+						reserved[to2] = true
+					moved_piece_ids[pid] = true
+		if moves.is_empty():
+			break
+		for m in moves:
+			_occupied.erase(m["from"])
+		for m in moves:
+			var dest: Vector2i = m["to"]
+			var bl: Block = m["blk"]
+			_occupied[dest] = bl
+			if bl != null and is_instance_valid(bl):
+				bl.position = (Vector2(dest) * cell_size).floor()
+				bl.set_grid_cell(dest)
 
 func _cleared_columns_for_row(spans_for_row:Array) -> PackedInt32Array:
 	var cols:=PackedInt32Array()
