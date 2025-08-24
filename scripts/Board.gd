@@ -1,7 +1,7 @@
 @tool
 extends Node2D
 
-enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR }
+enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR, PAUSED }
 
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const GhostOutline := preload("res://scripts/GhostOutline.gd")
@@ -49,6 +49,7 @@ var _rng := RandomNumberGenerator.new()
 var default_spawn_id: String = "I3"
 var _accum_cells: float = 0.0
 var _state: int = GameState.ACTIVE_CONTROLLED
+var _prev_state: int = GameState.ACTIVE_CONTROLLED
 var _conveyor_accum_ms: int = 0
 var _fully_on_grid_once: bool = false
 var _precreated_next_id: String = ""
@@ -117,6 +118,12 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pause_toggle"):
+		if _state == GameState.PAUSED:
+			_enter_state(_prev_state)
+		else:
+			_enter_state(GameState.PAUSED)
+		return
 	if _state != GameState.ACTIVE_CONTROLLED:
 		return
 	if event.is_action_pressed("hard_drop"):
@@ -191,7 +198,7 @@ func _update_precontrol(delta: float) -> void:
 			return
 
 func _grant_control() -> void:
-	_state = GameState.ACTIVE_CONTROLLED
+	_enter_state(GameState.ACTIVE_CONTROLLED)
 	_hold_left = false
 	_hold_right = false
 	_hold_dir = 0
@@ -357,7 +364,7 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 	poly._update_origin_marker()
 	_update_cell_size_for_children()
 	if use_precontrol:
-		_state = GameState.PRECONTROL_AUTOSLIDE
+		_enter_state(GameState.PRECONTROL_AUTOSLIDE)
 		_conveyor_accum_ms = 0
 		_fully_on_grid_once = false
 		_precreated_next_id = ""
@@ -369,7 +376,7 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		if ghost_overlay != null:
 			ghost_overlay.visible = false
 	else:
-		_state = GameState.ACTIVE_CONTROLLED
+		_enter_state(GameState.ACTIVE_CONTROLLED)
 
 func _get_property_list() -> Array:
 	var list: Array = []
@@ -532,13 +539,13 @@ func _start_line_clear_if_needed(next_id: String) -> void:
 		Score.note_lock_no_clear()
 		if next_id == PROMOTE_QUEUED_SENTINEL:
 			_promote_queued_to_active()
-			_state = GameState.PRECONTROL_AUTOSLIDE
+			_enter_state(GameState.PRECONTROL_AUTOSLIDE)
 			if ghost_overlay != null:
 				ghost_overlay.visible = false
 		else:
 			_spawn_from_id(next_id, true)
 		return
-	_state = GameState.LINE_CLEAR
+	_enter_state(GameState.LINE_CLEAR)
 	call_deferred("_run_line_clear", rows, next_id)
 
 func _find_full_rows() -> Array[int]:
@@ -570,7 +577,7 @@ func _run_line_clear(rows: Array[int], next_id: String) -> void:
 		_promote_queued_to_active()
 	else:
 		_spawn_from_id(next_id, true)
-	_state = GameState.PRECONTROL_AUTOSLIDE
+	_enter_state(GameState.PRECONTROL_AUTOSLIDE)
 	if ghost_overlay != null:
 		ghost_overlay.visible = false
 
@@ -714,7 +721,7 @@ func _promote_queued_to_active() -> void:
 	if _queued_piece.get_parent() == queued_container:
 		queued_container.remove_child(_queued_piece)
 		polyomino_container.add_child(_queued_piece)
-	_state = GameState.PRECONTROL_AUTOSLIDE
+	_enter_state(GameState.PRECONTROL_AUTOSLIDE)
 	_conveyor_accum_ms = 0
 	_fully_on_grid_once = false
 	_queued_piece = null
@@ -725,3 +732,8 @@ func _is_piece_fully_in_grid(p: Polyomino) -> bool:
 	for off in p.block_offsets:
 		min_local_y = min(min_local_y, int(off.y))
 	return int(p.grid_position.y) + min_local_y >= 0
+
+func _enter_state(s:int)->void:
+	_prev_state = _state
+	_state = s
+	print("[State] -> ", ["PRECONTROL_AUTOSLIDE","ACTIVE_CONTROLLED","LINE_CLEAR","PAUSED"][s])

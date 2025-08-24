@@ -4,7 +4,7 @@ extends Node2D
 @onready var color_rect: ColorRect = $Rect
 
 var grid_cell: Vector2i = Vector2i.ZERO
-var piece_id: int = 0
+var piece_id: int = 0 
 var rubble: bool = false
 var rubble_node: Node2D
 var rubble_seed: int = 0
