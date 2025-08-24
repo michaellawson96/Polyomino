@@ -12,4 +12,6 @@ func _unhandled_input(e:InputEvent)->void:
 func _apply(ids:Array[String],seed:int)->void:
 	var b:=get_tree().get_first_node_in_group("board")
 	if b!=null and b.has_method("reconfigure_bag"):
-		b.reconfigure_bag(ids,seed)
+		var ok:bool=b.reconfigure_bag(ids,seed)
+		if not ok:
+			print("[Bag] reconfigure rejected by entryway rule")

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://c5ql8plc2k201"]
 
-[ext_resource type="Script" path="res://tests/BagServiceTests.gd" id="1_3mmil"]
+[ext_resource type="Script" path="res://tests/CollapseRulesTests.gd" id="1_sedbc"]
 
 [node name="TestRunner" type="Node"]
-script = ExtResource("1_3mmil")
+script = ExtResource("1_sedbc")

@@ -7,17 +7,21 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const GhostOutline := preload("res://scripts/GhostOutline.gd")
 const BagService:=preload("res://scripts/BagService.gd")
 const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
+const BoardMask:=preload("res://scripts/BoardMask.gd")
+
 
 signal next_preview(ids: Array[String])
 
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
 		board_width = clamp(value, 1, 100)
+		_call_mask_resize()
 		call_deferred("_coerce_all_pieces_into_bounds")
 		_refresh_deferred()
 @export_range(1, 100) var board_height: int = 20:
 	set(value):
 		board_height = clamp(value, 1, 100)
+		_call_mask_resize()
 		_refresh_deferred()
 @export_range(1, 100) var cell_size: int = 32:
 	set(value):
@@ -37,6 +41,8 @@ signal next_preview(ids: Array[String])
 @export var hold_start_delay_ms: int = 200
 @export var hold_repeat_interval_ms: int = 40
 @export var most_recent_press_wins: bool = true
+@export var board_mask:BoardMask
+
 
 @onready var inactive_container := $InactiveContainer
 @onready var grid_overlay := $GridOverlay
@@ -67,6 +73,8 @@ var _queued_fully_on_grid_once: bool = false
 var _active_fully_in_grid_once: bool = false
 var _preview_updating: bool = false
 var ghost_overlay: GhostOutline
+var _mask_top_rows:PackedInt32Array=PackedInt32Array()
+var _row_mask_counts:PackedInt32Array=PackedInt32Array()
 
 func _ready():
 	if Engine.is_editor_hint():
@@ -77,10 +85,8 @@ func _ready():
 		inactive_container.name = "InactiveContainer"
 		add_child(inactive_container)
 	_rng.randomize()
+	_call_mask_resize()
 	add_to_group("board")
-	bag=BagService.new()
-	bag.setup(_all_shape_ids(),0)
-	_spawn_from_id(_bag_next())
 	_refresh_overlay()
 	ghost_overlay = GhostOutline.new()
 	add_child(ghost_overlay)
@@ -171,31 +177,30 @@ func _unhandled_input(event: InputEvent) -> void:
 			p.cycle_origin()
 
 func _update_precontrol(delta: float) -> void:
-	var piece := _get_active_polyomino()
-	if piece == null:
+	var piece:=_get_active_polyomino()
+	if piece==null:
 		return
 	if Input.is_action_just_pressed("ui_down"):
 		_grant_control()
 		return
-	_conveyor_accum_ms += int(delta * 1000.0)
-	while _conveyor_accum_ms >= conveyor_step_ms:
-		_conveyor_accum_ms -= conveyor_step_ms
+	_conveyor_accum_ms+=int(delta*1000.0)
+	while _conveyor_accum_ms>=conveyor_step_ms:
+		_conveyor_accum_ms-=conveyor_step_ms
 		if not _is_fully_inside_left_wall(piece):
-			piece.grid_position.x += 1
-			piece.position = (piece.grid_position * piece.cell_size).floor()
+			piece.grid_position.x+=1
+			_snap_piece_to_top_lane(piece)
 			if _is_fully_inside_left_wall(piece) and not _fully_on_grid_once:
-				_snap_piece_to_top_lane(piece)
-				_fully_on_grid_once = true
-				if _precreated_next_id == "":
-					_precreated_next_id = _bag_next()
-				_update_next_preview()
-				return
+				_fully_on_grid_once=true
+				if _precreated_next_id=="":
+					_precreated_next_id=_bag_next()
+			return
 		if _can_step_right_in_top_lane(piece):
-			piece.grid_position.x += 1
-			piece.position = (piece.grid_position * piece.cell_size).floor()
+			piece.grid_position.x+=1
+			_snap_piece_to_top_lane(piece)
 		else:
 			_grant_control()
 			return
+
 
 func _grant_control() -> void:
 	_enter_state(GameState.ACTIVE_CONTROLLED)
@@ -279,18 +284,21 @@ func _flip_active_piece_horizontal_no_kick() -> void:
 		p.apply_offsets(preview)
 
 func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
-	var base_x := int(piece.grid_position.x)
-	var base_y := int(piece.grid_position.y)
+	var base_x:=int(piece.grid_position.x)
+	var base_y:=int(piece.grid_position.y)
 	for off in offsets:
-		var nx := base_x + int(off.x)
-		var ny := base_y + int(off.y)
-		if nx < 0 or nx >= board_width:
+		var nx:=base_x+int(off.x)
+		var ny:=base_y+int(off.y)
+		if nx<0 or nx>=board_width:
 			return false
-		if ny >= board_height:
+		if ny>=board_height:
 			return false
-		if ny >= 0 and _occupied.has(Vector2i(nx, ny)):
+		if ny>=0 and not board_mask.is_playable(nx,ny):
+			return false
+		if ny>=0 and _occupied.has(Vector2i(nx,ny)):
 			return false
 	return true
+
 
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
@@ -411,45 +419,77 @@ func _pick_random_id() -> String:
 	return ids[_rng.randi_range(0, ids.size() - 1)]
 
 func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
-	var base_x := int(piece.grid_position.x)
-	var base_y := int(piece.grid_position.y)
+	var base_x:=int(piece.grid_position.x)
+	var base_y:=int(piece.grid_position.y)
 	for off in piece.block_offsets:
-		var nx := base_x + int(off.x) + delta.x
-		var ny := base_y + int(off.y) + delta.y
-		if nx < 0 or nx >= board_width:
+		var nx:=base_x+int(off.x)+delta.x
+		var ny:=base_y+int(off.y)+delta.y
+		if nx<0 or nx>=board_width:
 			return true
-		if ny >= board_height:
+		if ny>=board_height:
 			return true
-		if ny >= 0 and _occupied.has(Vector2i(nx, ny)):
+		if ny>=0 and not board_mask.is_playable(nx,ny):
+			return true
+		if ny>=0 and _occupied.has(Vector2i(nx,ny)):
 			return true
 	return false
 
 func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
-	var base_x := int(piece.grid_position.x)
+	var base_x:=int(piece.grid_position.x)
 	for off in piece.block_offsets:
-		if base_x + int(off.x) < 0:
+		if base_x+int(off.x)<0:
 			return false
 	return true
 
 func _snap_piece_to_top_lane(piece: Polyomino) -> void:
-	var min_local_y := 999999
+	var gx:=int(piece.grid_position.x)
+	var min_y:=999999
 	for off in piece.block_offsets:
-		min_local_y = min(min_local_y, int(off.y))
-	piece.grid_position.y = spawn_top_row - min_local_y
-	piece.position = (piece.grid_position * piece.cell_size).floor()
+		var cx:=gx+int(off.x)
+		var top = _mask_top_rows[cx] if (cx >= 0 and cx < board_width) else -1
+		if top<0:
+			top=0
+		var y_here: int = top - int(off.y) - 1
+		if y_here<min_y:
+			min_y=y_here
+	piece.grid_position.y=min_y
+	piece.position=(piece.grid_position*piece.cell_size).floor()
+
 	
 func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
-	var base_x := int(piece.grid_position.x)
+	var next_x:=int(piece.grid_position.x)+1
 	for off in piece.block_offsets:
-		var nx := base_x + 1 + int(off.x)
-		if nx >= board_width:
+		var cx:=next_x+int(off.x)
+		if cx<0 or cx>=board_width:
 			return false
+		var top:=_mask_top_rows[cx]
+		if top<0:
+			return false
+		var spawn_y:= top - int(off.y) - 1
+		if spawn_y>=board_height:
+			return false
+		if spawn_y>=0 and not board_mask.is_playable(cx,spawn_y+1):
+			pass
 	return true
 
 func _compute_hard_drop_delta(piece: Polyomino) -> int:
-	var dy := 0
-	while not _would_collide(piece, Vector2i(0, dy + 1)):
-		dy += 1
+	var dy:=0
+	while true:
+		var collide:=false
+		for off in piece.block_offsets:
+			var nx:=int(piece.grid_position.x)+int(off.x)
+			var ny:=int(piece.grid_position.y)+int(off.y)+dy+1
+			if nx<0 or nx>=board_width:
+				collide=true; break
+			if ny>=board_height:
+				collide=true; break
+			if ny>=0 and not board_mask.is_playable(nx,ny):
+				collide=true; break
+			if ny>=0 and _occupied.has(Vector2i(nx,ny)):
+				collide=true; break
+		if collide:
+			break
+		dy+=1
 	return dy
 
 func _hard_drop_active() -> void:
@@ -534,8 +574,8 @@ func _update_ghost() -> void:
 	ghost_overlay.set_base(base)
 
 func _start_line_clear_if_needed(next_id: String) -> void:
-	var rows := _find_full_rows()
-	if rows.is_empty():
+	var spans := _find_full_spans()
+	if spans.is_empty():
 		Score.note_lock_no_clear()
 		if next_id == PROMOTE_QUEUED_SENTINEL:
 			_promote_queued_to_active()
@@ -546,33 +586,14 @@ func _start_line_clear_if_needed(next_id: String) -> void:
 			_spawn_from_id(next_id, true)
 		return
 	_enter_state(GameState.LINE_CLEAR)
-	call_deferred("_run_line_clear", rows, next_id)
+	call_deferred("_resolve_clears_then_spawn", next_id)
 
-func _find_full_rows() -> Array[int]:
-	var counts := {}
-	for cell in _occupied.keys():
-		if cell.y >= 0 and cell.y < board_height:
-			counts[cell.y] = int(counts.get(cell.y, 0)) + 1
-	var rows: Array[int] = []
-	for y in counts.keys():
-		if int(counts[y]) == board_width:
-			rows.append(int(y))
-	rows.sort()
-	rows.reverse()
-	return rows
-
-func _run_line_clear(rows: Array[int], next_id: String) -> void:
-	var total:int=rows.size()
-	Score.note_rows_cleared(total)
-	for i in rows.size():
-		var y := rows[i]
-		var cut_ids: Array[int] = await _clear_row_animate(y)
-		_convert_survivors_to_rubble(cut_ids)
-		_collapse_above(y)
-		for j in range(i + 1, rows.size()):
-			rows[j] += 1
-		if clear_row_gap > 0.0:
-			await get_tree().create_timer(clear_row_gap).timeout
+func _resolve_clears_then_spawn(next_id: String) -> void:
+	while true:
+		var spans := _find_full_spans()
+		if spans.is_empty():
+			break
+		await _run_span_clear_cycle(spans)
 	if next_id == PROMOTE_QUEUED_SENTINEL:
 		_promote_queued_to_active()
 	else:
@@ -581,6 +602,24 @@ func _run_line_clear(rows: Array[int], next_id: String) -> void:
 	if ghost_overlay != null:
 		ghost_overlay.visible = false
 
+
+func _find_full_rows() -> Array[int]:
+	var counts:PackedInt32Array=PackedInt32Array()
+	counts.resize(board_height)
+	for y in board_height:
+		counts[y]=0
+	for cell in _occupied.keys():
+		var y:=int(cell.y)
+		if y>=0 and y<board_height:
+			if board_mask.is_playable(cell.x,cell.y):
+				counts[y]+=1
+	var rows:Array[int]=[]
+	for y in board_height:
+		if _row_mask_counts[y]>0 and counts[y]==_row_mask_counts[y]:
+			rows.append(y)
+	rows.sort()
+	rows.reverse()
+	return rows
 
 func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 	if cut_ids.is_empty():
@@ -601,9 +640,9 @@ func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 				col = Color.WHITE
 			b.set_rubble(true, rubble_jitter_px, seed, rubble_opacity, col)
 
-func _clear_row_animate(y:int) -> Array[int]:
+func _clear_span_animate(y:int, x0:int, x1:int, cleared:Dictionary) -> Array[int]:
 	var cut_ids := {}
-	for x in range(board_width):
+	for x in range(x0, x1 + 1):
 		var cell := Vector2i(x, y)
 		if not _occupied.has(cell):
 			continue
@@ -619,16 +658,17 @@ func _clear_row_animate(y:int) -> Array[int]:
 				tw.tween_property(rect, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 				await tw.finished
 			elif target is Node2D:
-				var tn := target as Node2D
+				var tn: Node2D = target as Node2D
 				tn.scale = Vector2.ONE
 				var tw2: Tween = create_tween()
 				tw2.tween_property(tn, "scale", Vector2.ZERO, clear_block_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 				await tw2.finished
 			_occupied.erase(cell)
 			block.queue_free()
+			cleared[cell]=true
 		else:
 			_occupied.erase(cell)
-		if clear_block_gap > 0.0 and x < board_width - 1:
+		if clear_block_gap > 0.0 and x < x1:
 			await get_tree().create_timer(clear_block_gap).timeout
 	var out: Array[int] = []
 	for k in cut_ids.keys():
@@ -655,10 +695,13 @@ func _bag_next() -> String:
 		return default_spawn_id
 	return String(nxt)
 
-func reconfigure_bag(ids: Array[String], seed: int = 0) -> void:
-	_pending_bag_ids = ids.duplicate(true)
-	_pending_bag_seed = seed
+func reconfigure_bag(ids:Array[String],seed:int=0)->bool:
+	if not _validate_entryway_for_bag(ids):
+		return false
+	_pending_bag_ids=ids.duplicate(true)
+	_pending_bag_seed=seed
 	_update_next_preview()
+	return true
 
 func _update_next_preview() -> void:
 	if _preview_updating:
@@ -737,3 +780,324 @@ func _enter_state(s:int)->void:
 	_prev_state = _state
 	_state = s
 	print("[State] -> ", ["PRECONTROL_AUTOSLIDE","ACTIVE_CONTROLLED","LINE_CLEAR","PAUSED"][s])
+
+func _call_mask_resize()->void:
+	if board_mask==null:
+		board_mask=BoardMask.new()
+	board_mask.set_size(board_width,board_height)
+	_recompute_mask_caches()
+	_refresh_mask_overlay()
+
+func _recompute_mask_caches()->void:
+	_mask_top_rows.resize(board_width)
+	_row_mask_counts.resize(board_height)
+	for x in board_width:
+		_mask_top_rows[x]=board_mask.top_playable_row_for_col(x)
+	for y in board_height:
+		_row_mask_counts[y]=board_mask.row_playable_count(y)
+
+func _refresh_mask_overlay()->void:
+	if is_instance_valid($MaskOverlay):
+		$MaskOverlay.refresh()
+	if is_instance_valid(grid_overlay):
+		grid_overlay.refresh()
+
+func import_mask_from_image(path:String, threshold:float=0.5) -> void:
+	var img:Image = Image.new()
+	var err:int = img.load(path)
+	if err != OK:
+		return
+	if board_mask == null:
+		board_mask = BoardMask.new()
+	board_mask.set_size(board_width, board_height)
+	board_mask.from_image(img, threshold)
+	_recompute_mask_caches()
+	_refresh_mask_overlay()
+
+func _compute_piece_width(id:String)->int:
+	var blocks:Array[Vector2]=POLY_DATA.get_blocks(id)
+	if blocks.is_empty():
+		return 1
+	var minx:int=int(blocks[0].x)
+	var maxx:int=int(blocks[0].x)
+	for v in blocks:
+		var ix:int=int(v.x)
+		if ix<minx: minx=ix
+		if ix>maxx: maxx=ix
+	return (maxx-minx)+1
+
+func _top_row_span_length()->int:
+	if board_mask==null: return 0
+	var y:int=0
+	var w:int=board_width
+	var run:int=0
+	var best:int=0
+	var gaps:int=0
+	for x in w:
+		var p:bool=board_mask.is_playable(x,y)
+		if p:
+			run+=1
+		else:
+			if run>0:
+				best=max(best,run)
+				run=0
+				gaps+=1
+	if run>0:
+		best=max(best,run)
+		run=0
+		gaps+=1
+	if best==0: return 0
+	if gaps>1: return -1
+	return best
+
+func _validate_entryway_for_bag(ids:Array[String])->bool:
+	var span:int=_top_row_span_length()
+	if span<=0: return false
+	if span==-1: return false
+	var uniq:= {}
+	for id in ids:
+		uniq[id]=true
+	for id in uniq.keys():
+		if _compute_piece_width(String(id))>span:
+			return false
+	return true
+
+func setup_with_size(size:Vector2i, cs:int, bag_ids:Array[String], seed:int=0)->bool:
+	board_width=size.x
+	board_height=size.y
+	cell_size=cs
+	_call_mask_resize()
+	if bag==null:
+		bag=BagService.new()
+	bag.setup(bag_ids,seed)
+	if not _validate_entryway_for_bag(bag_ids):
+		return false
+	_precreated_next_id=""
+	_spawn_from_id(_bag_next(),true)
+	return true
+
+func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], seed:int=0)->bool:
+	var low:=png_path.to_lower()
+	if not low.ends_with(".png"):
+		return false
+	var img:Image=Image.new()
+	var err:int=img.load(png_path)
+	if err!=OK:
+		return false
+	board_width=img.get_width()
+	board_height=img.get_height()
+	cell_size=cs
+	if board_mask==null:
+		board_mask=BoardMask.new()
+	board_mask.set_size(board_width,board_height)
+	board_mask.from_image(img,0.5)
+	_recompute_mask_caches()
+	_refresh_mask_overlay()
+	if bag==null:
+		bag=BagService.new()
+	bag.setup(bag_ids,seed)
+	if not _validate_entryway_for_bag(bag_ids):
+		return false
+	_precreated_next_id=""
+	_spawn_from_id(_bag_next(),true)
+	return true
+
+func _row_spans(y:int) -> Array[Vector2i]:
+	var spans:Array[Vector2i]=[]
+	var in_run:bool=false
+	var x0:int=0
+	for x in board_width:
+		if board_mask.is_playable(x,y):
+			if not in_run:
+				in_run=true
+				x0=x
+		else:
+			if in_run:
+				spans.append(Vector2i(x0,x-1))
+				in_run=false
+	if in_run:
+		spans.append(Vector2i(x0,board_width-1))
+	return spans
+
+func _find_full_spans() -> Array[Dictionary]:
+	var result:Array[Dictionary]=[]
+	for y in range(board_height - 1, -1, -1):
+		var spans:=_row_spans(y)
+		for seg in spans:
+			var x0:int=seg.x
+			var x1:int=seg.y
+			var filled:bool=true
+			for x in range(x0,x1+1):
+				var cell:=Vector2i(x,y)
+				if not _occupied.has(cell):
+					filled=false
+					break
+			if filled and (x1>=x0):
+				result.append({"y":y,"x0":x0,"x1":x1})
+	return result
+
+func _run_span_clear_cycle(spans: Array) -> void:
+	var by_row: Dictionary = {}
+	for d in spans:
+		var y: int = d["y"]
+		if not by_row.has(y):
+			by_row[y] = []
+		(by_row[y] as Array).append(d)
+	var ys: Array[int] = int_dict_keys(by_row)
+	ys.sort()
+	ys.reverse()
+	for y in ys:
+		var row_spans: Array = by_row[y]
+		row_spans.sort_custom(func(a, b): return int(a["x0"]) < int(b["x0"]))
+		var cut_ids_row: Array[int] = []
+		var cleared_row := {}
+		for seg in row_spans:
+			var x0: int = seg["x0"]
+			var x1: int = seg["x1"]
+			var cut_ids_this := await _clear_span_animate(y, x0, x1, cleared_row)
+			for id in cut_ids_this:
+				cut_ids_row.append(id)
+		_convert_survivors_to_rubble(cut_ids_row)
+		_masked_collapse_after_clear_one_row(cleared_row, y, row_spans)
+
+func int_dict_keys(d:Dictionary) -> Array[int]:
+	var out:Array[int]=[]
+	for k in d.keys():
+		out.append(int(k))
+	return out
+
+func _masked_collapse_after_clear_one_row(cleared:Dictionary, cleared_y:int, spans_for_row:Array) -> void:
+	var cleared_cols:=_cleared_columns_for_row(spans_for_row)
+	var cleared_col_set:={} 
+	for x in cleared_cols: cleared_col_set[x]=true
+
+	var grouped:Dictionary={}
+	for cell in _occupied.keys():
+		var b:Block=_occupied[cell]
+		if b==null or not is_instance_valid(b): continue
+		var pid:int=b.piece_id
+		if not grouped.has(pid): grouped[pid]=[]
+		(grouped[pid] as Array).append(cell)
+
+	var intact_pids:=[]
+	var rubble_cells:=[]
+
+	for pid in grouped.keys():
+		var cells:Array=grouped[pid]
+		if cells.is_empty(): continue
+		var any_rubble:=false
+		var max_y:int=-99999
+		for c in cells:
+			var blk:Block=_occupied[c]
+			if blk.rubble: any_rubble=true
+			if int(c.y)>max_y: max_y=int(c.y)
+		if max_y>=cleared_y: 
+			continue
+		if any_rubble:
+			for c in cells:
+				var blk2:Block=_occupied[c]
+				if blk2.rubble and int(c.y)<cleared_y:
+					rubble_cells.append(c)
+		else:
+			intact_pids.append(pid)
+
+	intact_pids.sort_custom(func(a,b):
+		var ca:Array=grouped[a]; var cb:Array=grouped[b]
+		var ax:=99999; var ay:=-99999
+		var bx:=99999; var by:=-99999
+		for v in ca:
+			var vx:int=int(v.x); var vy:int=int(v.y)
+			if vy>ay: ay=vy
+			if vx<ax: ax=vx
+		for v2 in cb:
+			var vx2:int=int(v2.x); var vy2:int=int(v2.y)
+			if vy2>by: by=vy2
+			if vx2<bx: bx=vx2
+		return ay>by if ay!=by else ax<bx
+	)
+	rubble_cells.sort_custom(func(a,b):
+		var ya:int=int(a.y); var yb:int=int(b.y)
+		return ya>yb if ya!=yb else int(a.x)<int(b.x)
+	)
+
+	var moves_from:Array[Vector2i]=[]
+	var moves_to:Array[Vector2i]=[]
+	var move_blocks:Array[Block]=[]
+
+	for pid in intact_pids:
+		var cells:Array=grouped[pid]
+		var touches:=false
+		for c in cells:
+			if cleared_col_set.has(int(c.x)): touches=true; break
+		if not touches: 
+			continue
+		var corridor_ok:=true
+		for c in cells:
+			var x:int=int(c.x); var y:int=int(c.y)
+			if not _mask_corridor_clear_inclusive(x, y+1, cleared_y):
+				corridor_ok=false; break
+		if not corridor_ok: 
+			continue
+		var can_fall:=true
+		for c in cells:
+			var below:=Vector2i(int(c.x), int(c.y)+1)
+			if below.y>=board_height: can_fall=false; break
+			if below.y>=0 and not board_mask.is_playable(below.x,below.y): can_fall=false; break
+			if _occupied.has(below): can_fall=false; break
+		if not can_fall: 
+			continue
+		for c in cells:
+			var blk:Block=_occupied[c]
+			moves_from.append(Vector2i(int(c.x),int(c.y)))
+			moves_to.append(Vector2i(int(c.x),int(c.y)+1))
+			move_blocks.append(blk)
+
+	for c in rubble_cells:
+		var x:int=int(c.x); var y:int=int(c.y)
+		if not cleared_col_set.has(x): 
+			continue
+		if not _mask_corridor_clear_inclusive(x, y+1, cleared_y):
+			continue
+		var to:=Vector2i(x,y+1)
+		if to.y>=board_height: continue
+		if to.y>=0 and not board_mask.is_playable(to.x,to.y): continue
+		if _occupied.has(to): continue
+		var blk:Block=_occupied[c]
+		if blk==null or not is_instance_valid(blk): continue
+		moves_from.append(Vector2i(int(c.x),int(c.y)))
+		moves_to.append(to)
+		move_blocks.append(blk)
+
+	for i in moves_from.size():
+		var from:=moves_from[i]
+		var to:=moves_to[i]
+		var blk:=move_blocks[i]
+		if _occupied.has(from) and _occupied[from]==blk:
+			_occupied.erase(from)
+		_occupied[to]=blk
+		if blk.has_method("set_grid_cell"):
+			blk.set_grid_cell(to)
+		blk.position=(Vector2(to)*cell_size).floor()
+
+func _cleared_columns_for_row(spans_for_row:Array) -> PackedInt32Array:
+	var cols:=PackedInt32Array()
+	var seen:= {}
+	for seg in spans_for_row:
+		var x0:int=seg["x0"]
+		var x1:int=seg["x1"]
+		for x in range(x0,x1+1):
+			if not seen.has(x):
+				seen[x]=true
+				cols.append(x)
+	cols.sort()
+	return cols
+
+func _mask_corridor_clear_inclusive(x:int, y_from:int, y_to:int) -> bool:
+	if y_from>y_to:
+		var t:=y_from
+		y_from=y_to
+		y_to=t
+	for y in range(max(y_from,0), y_to+1):
+		if not board_mask.is_playable(x,y):
+			return false
+	return true
