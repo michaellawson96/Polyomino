@@ -14,6 +14,14 @@ const SpawnLane:=preload("res://scripts/logic/SpawnLane.gd")
 
 
 signal next_preview(ids: Array[String])
+signal hard_drop(dy: int)
+signal piece_locked(pid: int, lost_blocks: int)
+signal rows_cleared(y: int, span_count: int)
+signal rubble_spawned(count: int)
+signal critical_started(active: bool)
+signal bag_reconfig_ok(ids: Array[String])
+signal bag_reconfig_fail(ids: Array[String])
+
 
 @export_range(1, 100) var board_width: int = 10:
 	set(value):
@@ -440,11 +448,11 @@ func _hard_drop_active() -> void:
 	if p == null:
 		return
 	var dy := _compute_hard_drop_delta(p)
-	
 	if dy > 0:
 		p.grid_position.y += dy
 		p.position = (p.grid_position * p.cell_size).floor()
-	Score.note_hard_drop(dy)
+		emit_signal("hard_drop", dy)
+		Score.note_hard_drop(dy)
 	_lock_piece(p)
 
 func _lock_piece(piece: Polyomino) -> void:
@@ -461,6 +469,23 @@ func _lock_piece(piece: Polyomino) -> void:
 		_occupied[c] = b
 	if is_instance_valid(piece):
 		piece.queue_free()
+
+	# Compute immediate lost blocks for this just-locked piece (spans that will clear now)
+	var lost:int = 0
+	var spans := _find_full_spans()
+	if not spans.is_empty():
+		for seg in spans:
+			var y:int = seg["y"]
+			var x0:int = seg["x0"]
+			var x1:int = seg["x1"]
+			for x in range(x0, x1 + 1):
+				var cell := Vector2i(x, y)
+				if _occupied.has(cell):
+					var blk := _occupied[cell] as Block
+					if blk != null and is_instance_valid(blk) and blk.piece_id == pid:
+						lost += 1
+	emit_signal("piece_locked", pid, lost)
+
 	var next_choice: String
 	if _pending_bag_ids.size() > 0:
 		if _queued_piece != null:
@@ -568,11 +593,12 @@ func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 	var pid_set := {}
 	for id in cut_ids:
 		pid_set[id] = true
+	var spawned:int = 0
 	for cell in _occupied.keys():
 		var b := _occupied[cell] as Block
 		if b == null or not is_instance_valid(b):
 			continue
-		if pid_set.has(b.piece_id):
+		if pid_set.has(b.piece_id) and not b.rubble:
 			var seed: int = abs(int(Time.get_ticks_msec()) + cell.x * 73856093 + cell.y * 19349663 + b.piece_id * 83492791)
 			var col: Color
 			if b.color_rect != null:
@@ -580,6 +606,9 @@ func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 			else:
 				col = Color.WHITE
 			b.set_rubble(true, rubble_jitter_px, seed, rubble_opacity, col)
+			spawned += 1
+	if spawned > 0:
+		emit_signal("rubble_spawned", spawned)
 
 func _clear_span_animate(y:int, x0:int, x1:int, cleared:Dictionary) -> Array[int]:
 	var cut_ids := {}
@@ -743,11 +772,14 @@ func _bag_next() -> String:
 
 func reconfigure_bag(ids:Array[String],seed:int=0)->bool:
 	if not _validate_entryway_for_bag(ids):
+		emit_signal("bag_reconfig_fail", ids.duplicate(true))
 		return false
-	_pending_bag_ids=ids.duplicate(true)
-	_pending_bag_seed=seed
+	_pending_bag_ids = ids.duplicate(true)
+	_pending_bag_seed = seed
 	_update_next_preview()
+	emit_signal("bag_reconfig_ok", ids.duplicate(true))
 	return true
+
 
 func _update_next_preview() -> void:
 	if _preview_updating:
@@ -941,6 +973,7 @@ func _run_span_clear_cycle(spans: Array) -> void:
 		var cut_ids_this := await _clear_span_animate(y, x0, x1, cleared_row)
 		for id in cut_ids_this:
 			cut_ids_row.append(id)
+	emit_signal("rows_cleared", y, row_spans.size())
 	_convert_survivors_to_rubble(cut_ids_row)
 	_masked_collapse_after_clear_one_row(cleared_row, y, row_spans)
 
