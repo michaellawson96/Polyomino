@@ -9,6 +9,7 @@ const BagService:=preload("res://scripts/BagService.gd")
 const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
 const BoardMask:=preload("res://scripts/BoardMask.gd")
 const ClearCollapse:=preload("res://scripts/logic/ClearCollapse.gd")
+const PlacementRules:=preload("res://scripts/logic/PlacementRules.gd")
 
 
 signal next_preview(ids: Array[String])
@@ -285,22 +286,8 @@ func _flip_active_piece_horizontal_no_kick() -> void:
 		p.apply_offsets(preview)
 
 func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
-	var base_x:=int(piece.grid_position.x)
-	var base_y:=int(piece.grid_position.y)
-	for off in offsets:
-		var nx:=base_x+int(off.x)
-		var ny:=base_y+int(off.y)
-		if nx<0 or nx>=board_width:
-			return false
-		if ny>=board_height:
-			return false
-		if ny>=0 and not board_mask.is_playable(nx,ny):
-			return false
-		if ny>=0 and _occupied.has(Vector2i(nx,ny)):
-			return false
-	return true
-
-
+	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
+	return PlacementRules.can_place(board_mask, board_width, board_height, base, offsets, _occupied)
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
@@ -420,20 +407,8 @@ func _pick_random_id() -> String:
 	return ids[_rng.randi_range(0, ids.size() - 1)]
 
 func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
-	var base_x:=int(piece.grid_position.x)
-	var base_y:=int(piece.grid_position.y)
-	for off in piece.block_offsets:
-		var nx:=base_x+int(off.x)+delta.x
-		var ny:=base_y+int(off.y)+delta.y
-		if nx<0 or nx>=board_width:
-			return true
-		if ny>=board_height:
-			return true
-		if ny>=0 and not board_mask.is_playable(nx,ny):
-			return true
-		if ny>=0 and _occupied.has(Vector2i(nx,ny)):
-			return true
-	return false
+	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
+	return PlacementRules.would_collide(board_mask, board_width, board_height, base, piece.block_offsets, delta, _occupied)
 
 func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
 	var base_x:=int(piece.grid_position.x)
@@ -474,24 +449,9 @@ func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
 	return true
 
 func _compute_hard_drop_delta(piece: Polyomino) -> int:
-	var dy:=0
-	while true:
-		var collide:=false
-		for off in piece.block_offsets:
-			var nx:=int(piece.grid_position.x)+int(off.x)
-			var ny:=int(piece.grid_position.y)+int(off.y)+dy+1
-			if nx<0 or nx>=board_width:
-				collide=true; break
-			if ny>=board_height:
-				collide=true; break
-			if ny>=0 and not board_mask.is_playable(nx,ny):
-				collide=true; break
-			if ny>=0 and _occupied.has(Vector2i(nx,ny)):
-				collide=true; break
-		if collide:
-			break
-		dy+=1
-	return dy
+	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
+	return PlacementRules.hard_drop_delta(board_mask, board_width, board_height, base, piece.block_offsets, _occupied)
+
 
 func _hard_drop_active() -> void:
 	if _state != GameState.ACTIVE_CONTROLLED:
