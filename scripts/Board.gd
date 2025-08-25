@@ -10,6 +10,7 @@ const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
 const BoardMask:=preload("res://scripts/BoardMask.gd")
 const ClearCollapse:=preload("res://scripts/logic/ClearCollapse.gd")
 const PlacementRules:=preload("res://scripts/logic/PlacementRules.gd")
+const SpawnLane:=preload("res://scripts/logic/SpawnLane.gd")
 
 
 signal next_preview(ids: Array[String])
@@ -419,34 +420,13 @@ func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
 
 func _snap_piece_to_top_lane(piece: Polyomino) -> void:
 	var gx:=int(piece.grid_position.x)
-	var min_y:=999999
-	for off in piece.block_offsets:
-		var cx:=gx+int(off.x)
-		var top = _mask_top_rows[cx] if (cx >= 0 and cx < board_width) else -1
-		if top<0:
-			top=0
-		var y_here: int = top - int(off.y) - 1
-		if y_here<min_y:
-			min_y=y_here
-	piece.grid_position.y=min_y
+	var y:=SpawnLane.snap_y_for_lane(_mask_top_rows, board_width, gx, piece.block_offsets)
+	piece.grid_position.y=y
 	piece.position=(piece.grid_position*piece.cell_size).floor()
-
 	
 func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
 	var next_x:=int(piece.grid_position.x)+1
-	for off in piece.block_offsets:
-		var cx:=next_x+int(off.x)
-		if cx<0 or cx>=board_width:
-			return false
-		var top:=_mask_top_rows[cx]
-		if top<0:
-			return false
-		var spawn_y:= top - int(off.y) - 1
-		if spawn_y>=board_height:
-			return false
-		if spawn_y>=0 and not board_mask.is_playable(cx,spawn_y+1):
-			pass
-	return true
+	return SpawnLane.can_step_right_in_lane(_mask_top_rows, board_mask, board_width, board_height, next_x, piece.block_offsets)
 
 func _compute_hard_drop_delta(piece: Polyomino) -> int:
 	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
@@ -855,12 +835,11 @@ func _call_mask_resize()->void:
 	_refresh_mask_overlay()
 
 func _recompute_mask_caches()->void:
-	_mask_top_rows.resize(board_width)
+	_mask_top_rows = SpawnLane.compute_top_rows(board_mask, board_width)
 	_row_mask_counts.resize(board_height)
-	for x in board_width:
-		_mask_top_rows[x]=board_mask.top_playable_row_for_col(x)
 	for y in board_height:
 		_row_mask_counts[y]=board_mask.row_playable_count(y)
+
 
 func _refresh_mask_overlay()->void:
 	if is_instance_valid($MaskOverlay):
@@ -881,52 +860,13 @@ func import_mask_from_image(path:String, threshold:float=0.5) -> void:
 	_refresh_mask_overlay()
 
 func _compute_piece_width(id:String)->int:
-	var blocks:Array[Vector2]=POLY_DATA.get_blocks(id)
-	if blocks.is_empty():
-		return 1
-	var minx:int=int(blocks[0].x)
-	var maxx:int=int(blocks[0].x)
-	for v in blocks:
-		var ix:int=int(v.x)
-		if ix<minx: minx=ix
-		if ix>maxx: maxx=ix
-	return (maxx-minx)+1
+	return SpawnLane.compute_piece_width(POLY_DATA.get_blocks(id))
 
 func _top_row_span_length()->int:
-	if board_mask==null: return 0
-	var y:int=0
-	var w:int=board_width
-	var run:int=0
-	var best:int=0
-	var gaps:int=0
-	for x in w:
-		var p:bool=board_mask.is_playable(x,y)
-		if p:
-			run+=1
-		else:
-			if run>0:
-				best=max(best,run)
-				run=0
-				gaps+=1
-	if run>0:
-		best=max(best,run)
-		run=0
-		gaps+=1
-	if best==0: return 0
-	if gaps>1: return -1
-	return best
+	return SpawnLane.top_row_span_length(board_mask, board_width)
 
 func _validate_entryway_for_bag(ids:Array[String])->bool:
-	var span:int=_top_row_span_length()
-	if span<=0: return false
-	if span==-1: return false
-	var uniq:= {}
-	for id in ids:
-		uniq[id]=true
-	for id in uniq.keys():
-		if _compute_piece_width(String(id))>span:
-			return false
-	return true
+	return SpawnLane.validate_entryway_for_bag(board_mask, board_width, ids, POLY_DATA)
 
 func setup_with_size(size:Vector2i, cs:int, bag_ids:Array[String], seed:int=0)->bool:
 	board_width=size.x
