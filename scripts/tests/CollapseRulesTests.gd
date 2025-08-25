@@ -2,7 +2,7 @@ extends Node
 
 const BoardScene := preload("res://scenes/Board.tscn")
 const BoardMask := preload("res://scripts/BoardMask.gd")
-const TestBlock := preload("res://tests/TestBlock.gd")
+const TestBlock := preload("res://scripts/tests/TestBlock.gd")
 
 func _ready():
 	var ok1: bool = _test_intact_pieces_drop_one_when_eligible()

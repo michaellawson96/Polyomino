@@ -8,6 +8,7 @@ const GhostOutline := preload("res://scripts/GhostOutline.gd")
 const BagService:=preload("res://scripts/BagService.gd")
 const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
 const BoardMask:=preload("res://scripts/BoardMask.gd")
+const ClearCollapse:=preload("res://scripts/logic/ClearCollapse.gd")
 
 
 signal next_preview(ids: Array[String])
@@ -1008,38 +1009,14 @@ func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], seed:int=0)
 	return true
 
 func _row_spans(y:int) -> Array[Vector2i]:
-	var spans:Array[Vector2i]=[]
-	var in_run:bool=false
-	var x0:int=0
-	for x in board_width:
-		if board_mask.is_playable(x,y):
-			if not in_run:
-				in_run=true
-				x0=x
-		else:
-			if in_run:
-				spans.append(Vector2i(x0,x-1))
-				in_run=false
-	if in_run:
-		spans.append(Vector2i(x0,board_width-1))
-	return spans
+	return ClearCollapse.row_spans(board_mask, board_width, y)
 
 func _find_full_spans() -> Array[Dictionary]:
-	var result:Array[Dictionary]=[]
-	for y in range(board_height - 1, -1, -1):
-		var spans:=_row_spans(y)
-		for seg in spans:
-			var x0:int=seg.x
-			var x1:int=seg.y
-			var filled:bool=true
-			for x in range(x0,x1+1):
-				var cell:=Vector2i(x,y)
-				if not _occupied.has(cell):
-					filled=false
-					break
-			if filled and (x1>=x0):
-				result.append({"y":y,"x0":x0,"x1":x1})
-	return result
+	var occ:Dictionary={}
+	for cell in _occupied.keys():
+		occ[cell]=true
+	return ClearCollapse.find_full_spans(board_mask, board_width, board_height, occ)
+
 
 func _run_span_clear_cycle(spans: Array) -> void:
 	if spans.is_empty():
@@ -1074,102 +1051,28 @@ func int_dict_keys(d:Dictionary) -> Array[int]:
 	return out
 
 func _masked_collapse_after_clear_one_row(cleared:Dictionary, cleared_y:int, spans_for_row:Array) -> void:
-	var cleared_cols := _cleared_columns_for_row(spans_for_row)
-	if cleared_y <= 0 or cleared_cols.is_empty():
-		return
-	var colset: Dictionary = {}
-	for x in cleared_cols:
-		colset[x] = true
-	var col_list: Array = cleared_cols.duplicate()
-	col_list.sort()
-	var moved_piece_ids: Dictionary = {}
-	var moved_block_ids: Dictionary = {}
-	while true:
-		var moves: Array = []
-		var reserved: Dictionary = {}
-		var piece_cells: Dictionary = {}
-		var piece_intact: Dictionary = {}
-		var piece_has_col: Dictionary = {}
-		var piece_all_above: Dictionary = {}
-		for cell in _occupied.keys():
-			var blk: Block = _occupied[cell]
-			if blk == null or not is_instance_valid(blk):
-				continue
-			var pid: int = blk.piece_id
-			if not piece_cells.has(pid):
-				piece_cells[pid] = []
-				piece_intact[pid] = true
-				piece_has_col[pid] = false
-				piece_all_above[pid] = true
-			(piece_cells[pid] as Array).append(cell)
-			if blk.rubble:
-				piece_intact[pid] = false
-			if colset.has(cell.x):
-				piece_has_col[pid] = true
-			if int(cell.y) >= cleared_y:
-				piece_all_above[pid] = false
-		for y in range(cleared_y - 1, -1, -1):
-			for i in range(col_list.size()):
-				var x: int = int(col_list[i])
-				var pos := Vector2i(x, y)
-				if not _occupied.has(pos):
-					continue
-				var b: Block = _occupied[pos]
-				if b == null or not is_instance_valid(b):
-					_occupied.erase(pos)
-					continue
-				if moved_block_ids.has(b.get_instance_id()):
-					continue
-				if b.rubble:
-					var to_r := Vector2i(pos.x, pos.y + 1)
-					if to_r.y < board_height and board_mask.is_playable(to_r.x, to_r.y) and not reserved.has(to_r) and not _occupied.has(to_r):
-						moves.append({"from": pos, "to": to_r, "blk": b})
-						reserved[to_r] = true
-						moved_block_ids[b.get_instance_id()] = true
-					continue
-				var pid: int = b.piece_id
-				if moved_piece_ids.has(pid):
-					continue
-				if not piece_intact.get(pid, false):
-					continue
-				if not piece_has_col.get(pid, false):
-					continue
-				if not piece_all_above.get(pid, false):
-					continue
-				var cells: Array = piece_cells[pid]
-				var can_move: bool = true
-				for c in cells:
-					var to := Vector2i(int(c.x), int(c.y) + 1)
-					if to.y >= board_height:
-						can_move = false
-						break
-					if not board_mask.is_playable(to.x, to.y):
-						can_move = false
-						break
-					if reserved.has(to):
-						can_move = false
-						break
-					if _occupied.has(to):
-						var ob: Block = _occupied[to]
-						if ob == null or not is_instance_valid(ob) or ob.piece_id != pid:
-							can_move = false
-							break
-				if can_move:
-					for c2 in cells:
-						var to2 := Vector2i(int(c2.x), int(c2.y) + 1)
-						moves.append({"from": Vector2i(int(c2.x), int(c2.y)), "to": to2, "blk": _occupied[c2]})
-						reserved[to2] = true
-					moved_piece_ids[pid] = true
-		if moves.is_empty():
-			break
-		for m in moves:
+	var snap:Dictionary={}
+	for pos in _occupied.keys():
+		var b: Block = _occupied[pos]
+		if b==null or not is_instance_valid(b):
+			_occupied.erase(pos)
+			continue
+		snap[pos]={"pid":b.piece_id,"rubble":b.rubble}
+	var passes:Array = ClearCollapse.collapse_passes(board_mask, board_width, board_height, cleared_y, spans_for_row, snap)
+	for pass_moves in passes:
+		var applied:Array=[]
+		for m in pass_moves:
+			var src:Vector2i=m["from"]
+			if _occupied.has(src):
+				applied.append({"from":src,"to":m["to"],"blk":_occupied[src]})
+		for m in applied:
 			_occupied.erase(m["from"])
-		for m in moves:
-			var dest: Vector2i = m["to"]
-			var bl: Block = m["blk"]
-			_occupied[dest] = bl
-			if bl != null and is_instance_valid(bl):
-				bl.position = (Vector2(dest) * cell_size).floor()
+		for m in applied:
+			var dest:Vector2i=m["to"]
+			var bl:Block=m["blk"]
+			_occupied[dest]=bl
+			if bl!=null and is_instance_valid(bl):
+				bl.position=(Vector2(dest)*cell_size).floor()
 				bl.set_grid_cell(dest)
 
 func _cleared_columns_for_row(spans_for_row:Array) -> PackedInt32Array:
