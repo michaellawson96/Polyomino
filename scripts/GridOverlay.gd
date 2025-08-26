@@ -7,8 +7,22 @@ extends Control
 
 @onready var board: Node = get_node(board_path)
 
+var _contrast: float = 0.35
+
 func _ready() -> void:
 	refresh()
+	if typeof(Settings) != TYPE_NIL:
+		Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
+		Settings.connect("changed", Callable(self, "_on_settings_changed"))
+		_on_settings_reloaded(Settings.get_cfg())
+
+func _on_settings_reloaded(cfg: GameConfig) -> void:
+	if cfg == null: return
+	_contrast = cfg.grid_contrast
+	queue_redraw()
+
+func _on_settings_changed(key: String, value) -> void:
+	_on_settings_reloaded(Settings.get_cfg())
 
 func _draw() -> void:
 	if board == null:

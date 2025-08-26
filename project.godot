@@ -19,6 +19,8 @@ config/icon="res://icon.svg"
 
 Score="*res://scripts/Score.gd"
 DevBag="*res://scripts/DevBag.gd"
+Settings="*res://scripts/singletons/Settings.gd"
+
 
 [input]
 

@@ -44,8 +44,6 @@ signal bag_reconfig_fail(ids: Array[String])
 @export_range(0.01, 0.30, 0.005) var clear_block_duration: float = 0.06
 @export_range(0.00, 0.20, 0.005) var clear_block_gap: float = 0.02 
 @export_range(0.00, 0.20, 0.005) var clear_row_gap: float = 0.04
-@export_range(0.0,10.0,0.1) var rubble_jitter_px: float = 3.0
-@export_range(0.1,1.0,0.05) var rubble_opacity: float = 0.95
 @export var polyomino_scene: PackedScene = preload("res://prefabs/Polyomino.tscn")
 @export var conveyor_step_ms: int = 150
 @export var spawn_top_row: int = 0
@@ -86,6 +84,10 @@ var _preview_updating: bool = false
 var ghost_overlay: GhostOutline
 var _mask_top_rows:PackedInt32Array=PackedInt32Array()
 var _row_mask_counts:PackedInt32Array=PackedInt32Array()
+var rubble_jitter_px: int = 1
+var rubble_opacity: float = 0.75
+var _hard_drop_allowed: bool = true
+
 
 func _ready():
 	if Engine.is_editor_hint():
@@ -102,6 +104,12 @@ func _ready():
 	ghost_overlay = GhostOutline.new()
 	add_child(ghost_overlay)
 	ghost_overlay.visible = false
+	if Engine.has_singleton("Settings") or true:
+		if typeof(Settings) != TYPE_NIL:
+			Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
+			Settings.connect("changed", Callable(self, "_on_settings_changed"))
+			_on_settings_reloaded(Settings.get_cfg())
+
 
 func _process(delta: float) -> void:
 	if _state == GameState.PRECONTROL_AUTOSLIDE:
@@ -442,6 +450,8 @@ func _compute_hard_drop_delta(piece: Polyomino) -> int:
 
 
 func _hard_drop_active() -> void:
+	if not _hard_drop_allowed:
+		return
 	if _state != GameState.ACTIVE_CONTROLLED:
 		return
 	var p := _get_active_polyomino()
@@ -1030,3 +1040,15 @@ func _mask_corridor_clear_inclusive(x:int, y_from:int, y_to:int) -> bool:
 		if not board_mask.is_playable(x,y):
 			return false
 	return true
+
+func _on_settings_reloaded(cfg: GameConfig) -> void:
+	if cfg == null: return
+	rubble_jitter_px = cfg.rubble_jitter_px
+	rubble_opacity = cfg.rubble_opacity
+	_hard_drop_allowed = cfg.hard_drop_enabled
+
+func _on_settings_changed(key: String, value) -> void:
+	# For now just pull the whole cfg each time (cheap, keeps code compact)
+	var cfg := Settings.get_cfg()
+	if cfg == null: return
+	_on_settings_reloaded(cfg)

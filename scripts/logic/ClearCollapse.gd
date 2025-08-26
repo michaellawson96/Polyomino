@@ -35,11 +35,11 @@ static func find_full_spans(board_mask, board_width:int, board_height:int, occup
 	return result
 
 static func _has_mask_ceiling_between(board_mask, x:int, y_from:int, cleared_y:int) -> bool:
-	# True if any mask-off cell exists strictly between this cell and the cleared row.
 	for yy in range(y_from+1, cleared_y):
 		if not board_mask.is_playable(x, yy):
 			return true
 	return false
+
 
 static func collapse_passes(board_mask, board_width:int, board_height:int, cleared_y:int, spans_for_row:Array, snapshot:Dictionary) -> Array:
 	var cleared_cols:=_cleared_columns_for_row(spans_for_row)

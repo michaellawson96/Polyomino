@@ -1,0 +1,19 @@
+[gd_resource type="GameConfig" load_steps=2 format=3]
+
+[ext_resource path="res://resources/GameConfig.gd" type="Script" id=1]
+
+[resource]
+script = ExtResource("1")
+gravity_cps = 1.0
+soft_drop_mult = 10.0
+hard_drop_enabled = true
+clear_span_ms = 60
+clear_row_ms = 90
+rubble_jitter_px = 1
+rubble_opacity = 0.75
+ghost_thickness = 2.0
+grid_contrast = 0.35
+master_volume_db = 0.0
+sfx_volume_db = 0.0
+bgm_volume_db = 0.0
+palette = "Default"

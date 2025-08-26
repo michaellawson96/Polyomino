@@ -15,7 +15,6 @@ board_width = 6
 board_height = 15
 cell_size = 38
 board_mask = SubResource("Resource_sjhch")
-default_spawn_id = "T5"
 
 [node name="PolyominoContainer" type="Node2D" parent="."]
 
