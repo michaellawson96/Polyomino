@@ -109,6 +109,10 @@ func _ready():
 			Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
 			Settings.connect("changed", Callable(self, "_on_settings_changed"))
 			_on_settings_reloaded(Settings.get_cfg())
+		if typeof(Palette) != TYPE_NIL:
+			Palette.connect("palette_changed", Callable(self, "_on_palette_changed"))
+			_on_palette_changed(Palette.current())
+
 
 
 func _process(delta: float) -> void:
@@ -1052,3 +1056,18 @@ func _on_settings_changed(key: String, value) -> void:
 	var cfg := Settings.get_cfg()
 	if cfg == null: return
 	_on_settings_reloaded(cfg)
+
+func _on_palette_changed(p: Palette) -> void:
+	# Recolor all placed blocks (intact+rubble alpha)
+	for cell in _occupied.keys():
+		var b: Block = _occupied[cell]
+		if b == null or not is_instance_valid(b): continue
+		var col := (Palette.color_for_shape_key(b.shape_key) if b.shape_key != "" else b.base_color)
+		b.apply_palette_color(col)
+		b.apply_rubble_tint(p.rubble_tint)
+	# Active piece recolor (if present)
+	if is_instance_valid(_active_piece):
+		var key := _active_piece.get_shape_key()
+		if key != "":
+			_active_piece.block_color = Palette.color_for_shape_key(key)
+	# Queue/preview, ghost, and grid listen directly to Palette
