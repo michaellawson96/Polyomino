@@ -1,12 +1,14 @@
-[gd_resource type="GameConfig" load_steps=2 format=3]
+[gd_resource type="GameConfig" script_class="GameConfig" load_steps=2 format=3 uid="uid://bq0qefeuxrs0i"]
 
-[ext_resource path="res://resources/GameConfig.gd" type="Script" id=1]
+[ext_resource type="Script" path="res://resources/GameConfig.gd" id="1"]
 
 [resource]
+resource_local_to_scene = false
+resource_name = ""
 script = ExtResource("1")
 gravity_cps = 1.0
 soft_drop_mult = 10.0
-hard_drop_enabled = true
+hard_drop_enabled = false
 clear_span_ms = 60
 clear_row_ms = 90
 rubble_jitter_px = 1

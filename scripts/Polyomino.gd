@@ -10,6 +10,9 @@ var block_color: Color = Color.WHITE
 var origin_index: int = 0
 var origin_marker: OriginMarker
 var show_origin: bool = false
+var shape_key: String = ""
+
+
 
 func initialize(
 	new_cell_size: int,
@@ -137,3 +140,6 @@ func apply_offsets(new_offsets: Array[Vector2]) -> void:
 	_redraw_blocks()
 	queue_redraw()
 	_update_origin_marker()
+
+func get_shape_key() -> String:
+	return shape_key

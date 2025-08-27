@@ -367,8 +367,9 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 		return
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
+	poly.shape_key = id
 	var blocks: Array[Vector2] = POLY_DATA.get_blocks(id)
-	var color: Color = s["color"]
+	var color: Color = (Palette.color_for_shape_key(id) if typeof(Palette) != TYPE_NIL else s["color"])
 	var min_x := 999999
 	var max_y := -999999
 	for off in blocks:
@@ -472,11 +473,13 @@ func _hard_drop_active() -> void:
 func _lock_piece(piece: Polyomino) -> void:
 	var pid := _next_piece_id
 	_next_piece_id += 1
-	var color_to_use: Color = piece.block_color if "block_color" in piece else Color.WHITE
+	var shape_key := piece.shape_key
+	var color_to_use: Color = (Palette.color_for_shape_key(shape_key) if typeof(Palette) != TYPE_NIL else piece.block_color)
 	for c in _piece_cells(piece):
 		var b: Block = block_scene.instantiate()
 		inactive_container.add_child(b)
 		b.position = (Vector2(c) * cell_size).floor()
+		b.set_shape_key(shape_key)
 		b.set_visual(cell_size, color_to_use)
 		b.set_grid_cell(c)
 		b.set_piece_id(pid)
@@ -1057,17 +1060,18 @@ func _on_settings_changed(key: String, value) -> void:
 	if cfg == null: return
 	_on_settings_reloaded(cfg)
 
-func _on_palette_changed(p: Palette) -> void:
-	# Recolor all placed blocks (intact+rubble alpha)
+func _on_palette_changed(p: PaletteData) -> void:
+	if p == null:
+		return
 	for cell in _occupied.keys():
 		var b: Block = _occupied[cell]
-		if b == null or not is_instance_valid(b): continue
-		var col := (Palette.color_for_shape_key(b.shape_key) if b.shape_key != "" else b.base_color)
+		if b == null or not is_instance_valid(b):
+			continue
+		var col: Color = (Palette.color_for_shape_key(b.shape_key) if b.shape_key != "" else b.base_color)
 		b.apply_palette_color(col)
-		b.apply_rubble_tint(p.rubble_tint)
-	# Active piece recolor (if present)
-	if is_instance_valid(_active_piece):
-		var key := _active_piece.get_shape_key()
-		if key != "":
-			_active_piece.block_color = Palette.color_for_shape_key(key)
-	# Queue/preview, ghost, and grid listen directly to Palette
+		if b.rubble:
+			b.apply_rubble_opacity(p.rubble_tint.a)
+	var act := _get_active_polyomino()
+	if act != null and act.shape_key != "":
+		act.block_color = Palette.color_for_shape_key(act.shape_key)
+

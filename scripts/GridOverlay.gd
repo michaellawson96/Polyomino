@@ -8,21 +8,16 @@ extends Control
 @onready var board: Node = get_node(board_path)
 
 var _contrast: float = 0.35
+var _grid_line: Color = Color(1,1,1,0.18)
 
 func _ready() -> void:
 	refresh()
 	if typeof(Settings) != TYPE_NIL:
 		Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
 		Settings.connect("changed", Callable(self, "_on_settings_changed"))
-		_on_settings_reloaded(Settings.get_cfg())
-
-func _on_settings_reloaded(cfg: GameConfig) -> void:
-	if cfg == null: return
-	_contrast = cfg.grid_contrast
-	queue_redraw()
-
-func _on_settings_changed(key: String, value) -> void:
-	_on_settings_reloaded(Settings.get_cfg())
+	if typeof(Palette) != TYPE_NIL:
+		Palette.connect("palette_changed", Callable(self, "_on_palette_changed"))
+		_on_palette_changed(Palette.current())
 
 func _draw() -> void:
 	if board == null:
@@ -91,3 +86,25 @@ func refresh() -> void:
 
 func _update_size() -> void:
 	size = Vector2(board.board_width, board.board_height) * board.cell_size
+
+func _on_settings_reloaded(_cfg) -> void:
+	_apply_palette_and_settings()
+
+func _on_settings_changed(_k: String, _v) -> void:
+	_apply_palette_and_settings()
+
+func _on_palette_changed(_p) -> void:
+	_apply_palette_and_settings()
+
+func _apply_palette_and_settings() -> void:
+	var base_col: Color = grid_color
+	if typeof(Palette) != TYPE_NIL and Palette.current() != null:
+		base_col = Palette.current().grid_line
+	var contrast: float = 1.0
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		contrast = clamp(Settings.get_cfg().grid_contrast, 0.0, 1.0)
+	var c := base_col
+	c.a = contrast * base_col.a
+	grid_color = c
+	refresh()
+

@@ -1,9 +1,9 @@
 extends Node
 class_name PaletteService
 
-signal palette_changed(palette: Palette)
+signal palette_changed(palette: PaletteData)
 
-var _palette: Palette
+var _palette: PaletteData
 const _DEFAULT_PATH := "res://resources/palettes/palette_default.tres"
 const _HC_PATH := "res://resources/palettes/palette_high_contrast.tres"
 
@@ -13,7 +13,7 @@ func _ready() -> void:
 		Settings.connect("changed", Callable(self, "_on_settings_changed"))
 	_apply_from_settings()
 
-func _on_settings_reloaded(cfg) -> void:
+func _on_settings_reloaded(_cfg) -> void:
 	_apply_from_settings()
 
 func _on_settings_changed(key: String, _v) -> void:
@@ -25,19 +25,21 @@ func _apply_from_settings() -> void:
 	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
 		name = Settings.get_cfg().palette
 	var path := _DEFAULT_PATH
-	var n := (name if name!=null else "Default").strip_edges().to_lower()
-	if n == "high contrast" or n == "high_contrast" or n == "highcontrast":
+	var n := (name if name != null else "Default").strip_edges().to_lower()
+	if n == "high contrast" or n == "high_contrast" or n == "highcontrast" or n == "hc":
 		path = _HC_PATH
 	var pal := ResourceLoader.load(path)
-	if pal != null and pal is Palette:
+	if pal != null and pal is PaletteData:
 		_palette = pal
 		emit_signal("palette_changed", _palette)
 
-func current() -> Palette:
+func current() -> PaletteData:
 	return _palette
 
 func color_for_shape_key(key: String) -> Color:
 	if _palette == null or _palette.piece_colors.is_empty():
 		return Color.WHITE
-	var idx := abs(int(hash(key))) % _palette.piece_colors.size()
+	var h: int = abs(int(hash(key)))
+	var size: int = _palette.piece_colors.size()
+	var idx: int = h % size
 	return _palette.piece_colors[idx]

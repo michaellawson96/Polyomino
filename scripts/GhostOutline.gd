@@ -8,20 +8,32 @@ var cell_size: int = 32
 var blocks: Array[Vector2] = []
 var base: Vector2i = Vector2i.ZERO
 var _thickness: float = 2.0
+var _ghost_tint: Color = Color(1,1,1,0.35)
 
 func _ready():
 	if typeof(Settings) != TYPE_NIL:
 		Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
 		Settings.connect("changed", Callable(self, "_on_settings_changed"))
 		_on_settings_reloaded(Settings.get_cfg())
+	if typeof(Palette) != TYPE_NIL:
+		Palette.connect("palette_changed", Callable(self, "_on_palette_changed"))
+		_on_palette_changed(Palette.current())
 
-func _on_settings_reloaded(cfg: GameConfig) -> void:
+
+
+func _on_settings_reloaded(cfg) -> void:
 	if cfg == null: return
-	_thickness = cfg.ghost_thickness
+	line_width = cfg.ghost_thickness
 	queue_redraw()
 
-func _on_settings_changed(key: String, value) -> void:
+func _on_settings_changed(_k: String, _v) -> void:
 	_on_settings_reloaded(Settings.get_cfg())
+
+func _on_palette_changed(p) -> void:
+	if p == null: return
+	color = p.ghost_tint
+	queue_redraw()
+
 
 
 func set_style(cs: int, col: Color) -> void:

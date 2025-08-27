@@ -1,0 +1,11 @@
+[gd_resource type="PaletteData" load_steps=2 format=3]
+
+[ext_resource path="res://resources/palettes/Palette.gd" type="Script" id=1]
+
+[resource]
+script = ExtResource("1")
+name = "High Contrast"
+piece_colors = [Color(0.95,0.00,0.00,1), Color(0.00,0.75,0.00,1), Color(0.00,0.40,1.00,1), Color(1.00,0.80,0.00,1), Color(0.60,0.00,1.00,1), Color(0.00,0.90,0.90,1), Color(0.90,0.00,0.60,1), Color(0.70,0.30,0.00,1), Color(0.00,0.00,0.00,1), Color(1.00,1.00,1.00,1)]
+rubble_tint = Color(1,1,1,0.95)
+ghost_tint = Color(1,1,1,0.55)
+grid_line = Color(1,1,1,0.35)

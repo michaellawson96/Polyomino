@@ -12,12 +12,16 @@ var rubble_jitter_px: float = 3.0
 var rubble_opacity: float = 0.95
 var rubble_color: Color = Color.WHITE
 var _cell_size: int = 32
+var shape_key: String = ""
+var base_color: Color = Color.WHITE
+
 
 func set_visual(cell_size: int, color: Color) -> void:
 	_cell_size = cell_size
 	if color_rect == null:
 		push_error("Block node is missing a ColorRect child named 'Rect'")
 		return
+	base_color = color
 	color_rect.size = Vector2(cell_size, cell_size).floor()
 	color_rect.position = Vector2.ZERO
 	color_rect.color = color
@@ -86,3 +90,18 @@ func _build_rubble() -> void:
 	p2.color = col
 	rubble_node.add_child(p1)
 	rubble_node.add_child(p2)
+
+func set_shape_key(key: String) -> void:
+	shape_key = key
+
+func apply_palette_color(color: Color) -> void:
+	base_color = color
+	if color_rect != null and not rubble:
+		color_rect.color = color
+
+func apply_rubble_opacity(a: float) -> void:
+	if not rubble:
+		return
+	rubble_opacity = a
+	_build_rubble()
+
