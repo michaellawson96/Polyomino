@@ -41,7 +41,7 @@ static func _has_mask_ceiling_between(board_mask, x:int, y_from:int, cleared_y:i
 	return false
 
 
-static func collapse_passes(board_mask, board_width:int, board_height:int, cleared_y:int, spans_for_row:Array, snapshot:Dictionary) -> Array:
+static func collapse_passes(board_mask, _board_width:int, board_height:int, cleared_y:int, spans_for_row:Array, snapshot:Dictionary) -> Array:
 	var cleared_cols:=_cleared_columns_for_row(spans_for_row)
 	if cleared_y<=0 or cleared_cols.is_empty():
 		return []

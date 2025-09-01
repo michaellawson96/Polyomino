@@ -4,14 +4,13 @@ extends Node2D
 enum GameState { PRECONTROL_AUTOSLIDE, ACTIVE_CONTROLLED, LINE_CLEAR, PAUSED }
 
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
-const GhostOutline := preload("res://scripts/GhostOutline.gd")
-const BagService:=preload("res://scripts/BagService.gd")
+const GhostOutlineScript := preload("res://scripts/GhostOutline.gd")
+const BagServiceScript:=preload("res://scripts/BagService.gd")
 const PROMOTE_QUEUED_SENTINEL := "__PROMOTE_QUEUED__"
-const BoardMask:=preload("res://scripts/BoardMask.gd")
-const ClearCollapse:=preload("res://scripts/logic/ClearCollapse.gd")
-const PlacementRules:=preload("res://scripts/logic/PlacementRules.gd")
-const SpawnLane:=preload("res://scripts/logic/SpawnLane.gd")
-
+const BoardMaskScript:=preload("res://scripts/BoardMask.gd")
+const ClearCollapseMod:=preload("res://scripts/logic/ClearCollapse.gd")
+const PlacementRulesMod:=preload("res://scripts/logic/PlacementRules.gd")
+const SpawnLaneMod:=preload("res://scripts/logic/SpawnLane.gd")
 
 signal next_preview(ids: Array[String])
 signal hard_drop(dy: int)
@@ -50,7 +49,7 @@ signal bag_reconfig_fail(ids: Array[String])
 @export var hold_start_delay_ms: int = 200
 @export var hold_repeat_interval_ms: int = 40
 @export var most_recent_press_wins: bool = true
-@export var board_mask:BoardMask
+@export var board_mask:BoardMaskScript
 
 
 @onready var inactive_container := $InactiveContainer
@@ -73,7 +72,7 @@ var _hold_right: bool = false
 var _hold_dir: int = 0
 var _hold_timer_ms: int = -1
 var _next_piece_id: int = 1
-var bag:BagService
+var bag:BagServiceScript
 var _pending_bag_ids:Array[String]=[]
 var _pending_bag_seed:int=0
 var _queued_piece: Polyomino = null
@@ -81,7 +80,7 @@ var _queued_conveyor_accum_ms: int = 0
 var _queued_fully_on_grid_once: bool = false
 var _active_fully_in_grid_once: bool = false
 var _preview_updating: bool = false
-var ghost_overlay: GhostOutline
+var ghost_overlay: GhostOutlineScript
 var _mask_top_rows:PackedInt32Array=PackedInt32Array()
 var _row_mask_counts:PackedInt32Array=PackedInt32Array()
 var rubble_jitter_px: int = 1
@@ -101,7 +100,7 @@ func _ready():
 	_call_mask_resize()
 	add_to_group("board")
 	_refresh_overlay()
-	ghost_overlay = GhostOutline.new()
+	ghost_overlay = GhostOutlineScript.new()
 	add_child(ghost_overlay)
 	ghost_overlay.visible = false
 	if Engine.has_singleton("Settings") or true:
@@ -308,7 +307,7 @@ func _flip_active_piece_horizontal_no_kick() -> void:
 
 func _can_place_orientation(piece: Polyomino, offsets: Array[Vector2]) -> bool:
 	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
-	return PlacementRules.can_place(board_mask, board_width, board_height, base, offsets, _occupied)
+	return PlacementRulesMod.can_place(board_mask, board_width, board_height, base, offsets, _occupied)
 
 func _piece_cells(piece: Polyomino) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
@@ -430,7 +429,7 @@ func _pick_random_id() -> String:
 
 func _would_collide(piece: Polyomino, delta: Vector2i) -> bool:
 	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
-	return PlacementRules.would_collide(board_mask, board_width, board_height, base, piece.block_offsets, delta, _occupied)
+	return PlacementRulesMod.would_collide(board_mask, board_width, board_height, base, piece.block_offsets, delta, _occupied)
 
 func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
 	var base_x:=int(piece.grid_position.x)
@@ -441,17 +440,17 @@ func _is_fully_inside_left_wall(piece: Polyomino) -> bool:
 
 func _snap_piece_to_top_lane(piece: Polyomino) -> void:
 	var gx:=int(piece.grid_position.x)
-	var y:=SpawnLane.snap_y_for_lane(_mask_top_rows, board_width, gx, piece.block_offsets)
+	var y:=SpawnLaneMod.snap_y_for_lane(_mask_top_rows, board_width, gx, piece.block_offsets)
 	piece.grid_position.y=y
 	piece.position=(piece.grid_position*piece.cell_size).floor()
 	
 func _can_step_right_in_top_lane(piece: Polyomino) -> bool:
 	var next_x:=int(piece.grid_position.x)+1
-	return SpawnLane.can_step_right_in_lane(_mask_top_rows, board_mask, board_width, board_height, next_x, piece.block_offsets)
+	return SpawnLaneMod.can_step_right_in_lane(_mask_top_rows, board_mask, board_width, board_height, next_x, piece.block_offsets)
 
 func _compute_hard_drop_delta(piece: Polyomino) -> int:
 	var base:=Vector2i(int(piece.grid_position.x), int(piece.grid_position.y))
-	return PlacementRules.hard_drop_delta(board_mask, board_width, board_height, base, piece.block_offsets, _occupied)
+	return PlacementRulesMod.hard_drop_delta(board_mask, board_width, board_height, base, piece.block_offsets, _occupied)
 
 
 func _hard_drop_active() -> void:
@@ -616,13 +615,13 @@ func _convert_survivors_to_rubble(cut_ids: Array[int]) -> void:
 		if b == null or not is_instance_valid(b):
 			continue
 		if pid_set.has(b.piece_id) and not b.rubble:
-			var seed: int = abs(int(Time.get_ticks_msec()) + cell.x * 73856093 + cell.y * 19349663 + b.piece_id * 83492791)
+			var rng_seed: int = abs(int(Time.get_ticks_msec()) + cell.x * 73856093 + cell.y * 19349663 + b.piece_id * 83492791)
 			var col: Color
 			if b.color_rect != null:
 				col = b.color_rect.color
 			else:
 				col = Color.WHITE
-			b.set_rubble(true, rubble_jitter_px, seed, rubble_opacity, col)
+			b.set_rubble(true, rubble_jitter_px, rng_seed, rubble_opacity, col)
 			spawned += 1
 	if spawned > 0:
 		emit_signal("rubble_spawned", spawned)
@@ -701,10 +700,10 @@ func _collapse_above(cleared_y: int, spans: Array) -> void:
 			if cell.y >= cleared_y:
 				piece_all_above[pid] = false
 		var decided_piece: Dictionary = {}
-		for y in range(cleared_y - 1, -1, -1):
+		for yy in range(cleared_y - 1, -1, -1):
 			for i in range(col_list.size()):
 				var x: int = int(col_list[i])
-				var pos := Vector2i(x, y)
+				var pos := Vector2i(x, yy)
 				if not _occupied.has(pos):
 					continue
 				var b: Block = _occupied[pos]
@@ -746,10 +745,10 @@ func _collapse_above(cleared_y: int, spans: Array) -> void:
 						reserved[to2] = true
 					moved_piece_ids[pid] = true
 					decided_piece[pid] = true
-		for y in range(cleared_y - 1, -1, -1):
+		for yy in range(cleared_y - 1, -1, -1):
 			for i in range(col_list.size()):
 				var x2: int = int(col_list[i])
-				var from := Vector2i(x2, y)
+				var from := Vector2i(x2, yy)
 				if not _occupied.has(from):
 					continue
 				var rb: Block = _occupied[from]
@@ -787,12 +786,12 @@ func _bag_next() -> String:
 		return default_spawn_id
 	return String(nxt)
 
-func reconfigure_bag(ids:Array[String],seed:int=0)->bool:
+func reconfigure_bag(ids:Array[String],rng_seed:int=0)->bool:
 	if not _validate_entryway_for_bag(ids):
 		emit_signal("bag_reconfig_fail", ids.duplicate(true))
 		return false
 	_pending_bag_ids = ids.duplicate(true)
-	_pending_bag_seed = seed
+	_pending_bag_seed = rng_seed
 	_update_next_preview()
 	emit_signal("bag_reconfig_ok", ids.duplicate(true))
 	return true
@@ -804,7 +803,7 @@ func _update_next_preview() -> void:
 	_preview_updating = true
 	var next_id: String = ""
 	if _pending_bag_ids.size() > 0:
-		var temp := BagService.new()
+		var temp := BagServiceScript.new()
 		temp.setup(_pending_bag_ids, _pending_bag_seed)
 		var v0: Variant = temp.next()
 		if v0 != null:
@@ -878,19 +877,21 @@ func _enter_state(s:int)->void:
 
 func _call_mask_resize()->void:
 	if board_mask==null:
-		board_mask=BoardMask.new()
+		board_mask=BoardMaskScript.new()
 	board_mask.set_size(board_width,board_height)
 	_recompute_mask_caches()
 	_refresh_mask_overlay()
 
 func _recompute_mask_caches()->void:
-	_mask_top_rows = SpawnLane.compute_top_rows(board_mask, board_width)
+	_mask_top_rows = SpawnLaneMod.compute_top_rows(board_mask, board_width)
 	_row_mask_counts.resize(board_height)
 	for y in board_height:
 		_row_mask_counts[y]=board_mask.row_playable_count(y)
 
 
 func _refresh_mask_overlay()->void:
+	if not has_node("MaskOverlay"):
+		return
 	if is_instance_valid($MaskOverlay):
 		$MaskOverlay.refresh()
 	if is_instance_valid(grid_overlay):
@@ -902,36 +903,36 @@ func import_mask_from_image(path:String, threshold:float=0.5) -> void:
 	if err != OK:
 		return
 	if board_mask == null:
-		board_mask = BoardMask.new()
+		board_mask = BoardMaskScript.new()
 	board_mask.set_size(board_width, board_height)
 	board_mask.from_image(img, threshold)
 	_recompute_mask_caches()
 	_refresh_mask_overlay()
 
 func _compute_piece_width(id:String)->int:
-	return SpawnLane.compute_piece_width(POLY_DATA.get_blocks(id))
+	return SpawnLaneMod.compute_piece_width(POLY_DATA.get_blocks(id))
 
 func _top_row_span_length()->int:
-	return SpawnLane.top_row_span_length(board_mask, board_width)
+	return SpawnLaneMod.top_row_span_length(board_mask, board_width)
 
 func _validate_entryway_for_bag(ids:Array[String])->bool:
-	return SpawnLane.validate_entryway_for_bag(board_mask, board_width, ids, POLY_DATA)
+	return SpawnLaneMod.validate_entryway_for_bag(board_mask, board_width, ids, POLY_DATA)
 
-func setup_with_size(size:Vector2i, cs:int, bag_ids:Array[String], seed:int=0)->bool:
+func setup_with_size(size:Vector2i, cs:int, bag_ids:Array[String], rng_seed:int=0)->bool:
 	board_width=size.x
 	board_height=size.y
 	cell_size=cs
 	_call_mask_resize()
 	if bag==null:
-		bag=BagService.new()
-	bag.setup(bag_ids,seed)
+		bag=BagServiceScript.new()
+	bag.setup(bag_ids,rng_seed)
 	if not _validate_entryway_for_bag(bag_ids):
 		return false
 	_precreated_next_id=""
 	_spawn_from_id(_bag_next(),true)
 	return true
 
-func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], seed:int=0)->bool:
+func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], rng_seed:int=0)->bool:
 	var low:=png_path.to_lower()
 	if not low.ends_with(".png"):
 		return false
@@ -943,14 +944,14 @@ func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], seed:int=0)
 	board_height=img.get_height()
 	cell_size=cs
 	if board_mask==null:
-		board_mask=BoardMask.new()
+		board_mask=BoardMaskScript.new()
 	board_mask.set_size(board_width,board_height)
 	board_mask.from_image(img,0.5)
 	_recompute_mask_caches()
 	_refresh_mask_overlay()
 	if bag==null:
-		bag=BagService.new()
-	bag.setup(bag_ids,seed)
+		bag=BagServiceScript.new()
+	bag.setup(bag_ids,rng_seed)
 	if not _validate_entryway_for_bag(bag_ids):
 		return false
 	_precreated_next_id=""
@@ -958,13 +959,13 @@ func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], seed:int=0)
 	return true
 
 func _row_spans(y:int) -> Array[Vector2i]:
-	return ClearCollapse.row_spans(board_mask, board_width, y)
+	return ClearCollapseMod.row_spans(board_mask, board_width, y)
 
 func _find_full_spans() -> Array[Dictionary]:
 	var occ:Dictionary={}
 	for cell in _occupied.keys():
 		occ[cell]=true
-	return ClearCollapse.find_full_spans(board_mask, board_width, board_height, occ)
+	return ClearCollapseMod.find_full_spans(board_mask, board_width, board_height, occ)
 
 
 func _run_span_clear_cycle(spans: Array) -> void:
@@ -1000,7 +1001,7 @@ func int_dict_keys(d:Dictionary) -> Array[int]:
 		out.append(int(k))
 	return out
 
-func _masked_collapse_after_clear_one_row(cleared:Dictionary, cleared_y:int, spans_for_row:Array) -> void:
+func _masked_collapse_after_clear_one_row(_cleared:Dictionary, cleared_y:int, spans_for_row:Array) -> void:
 	var snap:Dictionary={}
 	for pos in _occupied.keys():
 		var b: Block = _occupied[pos]
@@ -1008,7 +1009,7 @@ func _masked_collapse_after_clear_one_row(cleared:Dictionary, cleared_y:int, spa
 			_occupied.erase(pos)
 			continue
 		snap[pos]={"pid":b.piece_id,"rubble":b.rubble}
-	var passes:Array = ClearCollapse.collapse_passes(board_mask, board_width, board_height, cleared_y, spans_for_row, snap)
+	var passes:Array = ClearCollapseMod.collapse_passes(board_mask, board_width, board_height, cleared_y, spans_for_row, snap)
 	for pass_moves in passes:
 		var applied:Array=[]
 		for m in pass_moves:
@@ -1043,8 +1044,8 @@ func _mask_corridor_clear_inclusive(x:int, y_from:int, y_to:int) -> bool:
 		var t:=y_from
 		y_from=y_to
 		y_to=t
-	for y in range(max(y_from,0), y_to+1):
-		if not board_mask.is_playable(x,y):
+	for yy in range(max(y_from,0), y_to+1):
+		if not board_mask.is_playable(x,yy):
 			return false
 	return true
 
@@ -1054,7 +1055,7 @@ func _on_settings_reloaded(cfg: GameConfig) -> void:
 	rubble_opacity = cfg.rubble_opacity
 	_hard_drop_allowed = cfg.hard_drop_enabled
 
-func _on_settings_changed(key: String, value) -> void:
+func _on_settings_changed(key: String, _value) -> void:
 	# For now just pull the whole cfg each time (cheap, keeps code compact)
 	var cfg := Settings.get_cfg()
 	if cfg == null: return

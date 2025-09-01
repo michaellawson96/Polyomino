@@ -14,8 +14,12 @@ func _reload_from_path(p: String) -> void:
 	var res := ResourceLoader.load(p)
 	if res != null and res is GameConfig:
 		_cfg = res
-		emit_signal("reloaded", _cfg)
-		emit_signal("changed", "*", null)
+	else:
+		# Fallback to a fresh config so boot never fails
+		_cfg = GameConfig.new()
+		push_warning("Settings: failed to load '%s'; using defaults." % p)
+	emit_signal("reloaded", _cfg)
+	emit_signal("changed", "*", null)
 
 func get_cfg() -> GameConfig:
 	return _cfg

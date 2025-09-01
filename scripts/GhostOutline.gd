@@ -31,10 +31,9 @@ func _on_settings_changed(_k: String, _v) -> void:
 
 func _on_palette_changed(p) -> void:
 	if p == null: return
-	color = p.ghost_tint
+	_ghost_tint = p.ghost_tint
+	color = _ghost_tint
 	queue_redraw()
-
-
 
 func set_style(cs: int, col: Color) -> void:
 	cell_size = cs
@@ -53,13 +52,13 @@ func set_base(g: Vector2i) -> void:
 func _draw() -> void:
 	if blocks.is_empty():
 		return
-	var set := {}
+	var pos_set := {}
 	for off in blocks:
-		set[Vector2i(int(off.x), int(off.y))] = true
+		pos_set[Vector2i(int(off.x), int(off.y))] = true
 	for off in blocks:
 		var x := int(off.x)
 		var y := int(off.y)
-		if not set.has(Vector2i(x, y + 1)):
+		if not pos_set.has(Vector2i(x, y + 1)):
 			var ypix := float((y + 1) * cell_size)
 			var x0 := float(x * cell_size)
 			var x1 := float((x + 1) * cell_size)

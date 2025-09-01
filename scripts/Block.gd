@@ -34,10 +34,10 @@ func set_grid_cell(v: Vector2i) -> void:
 func set_piece_id(v: int) -> void:
 	piece_id = v
 
-func set_rubble(enabled: bool, jitter_px: float, seed: int, opacity: float, color: Color) -> void:
+func set_rubble(enabled: bool, jitter_px: float, rng_seed: int, opacity: float, color: Color) -> void:
 	rubble = enabled
 	rubble_jitter_px = jitter_px
-	rubble_seed = seed
+	rubble_seed = rng_seed
 	rubble_opacity = opacity
 	rubble_color = color
 	if rubble:

@@ -97,14 +97,19 @@ func _on_palette_changed(_p) -> void:
 	_apply_palette_and_settings()
 
 func _apply_palette_and_settings() -> void:
-	var base_col: Color = grid_color
 	if typeof(Palette) != TYPE_NIL and Palette.current() != null:
-		base_col = Palette.current().grid_line
-	var contrast: float = 1.0
+		_grid_line = Palette.current().grid_line
+	else:
+		_grid_line = grid_color
+
 	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
-		contrast = clamp(Settings.get_cfg().grid_contrast, 0.0, 1.0)
-	var c := base_col
-	c.a = contrast * base_col.a
+		_contrast = clamp(Settings.get_cfg().grid_contrast, 0.0, 1.0)
+	else:
+		_contrast = 1.0
+
+	var c := _grid_line
+	c.a = _contrast * _grid_line.a
 	grid_color = c
 	refresh()
+
 

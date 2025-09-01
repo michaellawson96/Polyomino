@@ -1,4 +1,4 @@
-[gd_resource type="GameConfig" script_class="GameConfig" load_steps=2 format=3 uid="uid://bq0qefeuxrs0i"]
+[gd_resource type="Resource" load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://resources/GameConfig.gd" id="1"]
 

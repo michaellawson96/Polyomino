@@ -7,11 +7,11 @@ var _idx:int= 0
 var _rng:RandomNumberGenerator= RandomNumberGenerator.new()
 var _seed:int= 0
 
-func setup(pieces:Array,seed:int=0)->void:
+func setup(pieces:Array,rng_seed:int=0)->void:
 	_allowed=pieces.duplicate(true)
-	_seed=seed
-	if seed!=0:
-		_rng.seed=seed
+	_seed=rng_seed
+	if rng_seed!=0:
+		_rng.seed=rng_seed
 	else:
 		_rng.randomize()
 	_refill()

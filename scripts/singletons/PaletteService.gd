@@ -28,10 +28,15 @@ func _apply_from_settings() -> void:
 	var n := (name if name != null else "Default").strip_edges().to_lower()
 	if n == "high contrast" or n == "high_contrast" or n == "highcontrast" or n == "hc":
 		path = _HC_PATH
+
 	var pal := ResourceLoader.load(path)
-	if pal != null and pal is PaletteData:
+	if pal == null or not (pal is PaletteData):
+		push_warning("Palette: failed to load '%s'; using default in-memory palette." % path)
+		var fallback := PaletteData.new()
+		_palette = fallback
+	else:
 		_palette = pal
-		emit_signal("palette_changed", _palette)
+	emit_signal("palette_changed", _palette)
 
 func current() -> PaletteData:
 	return _palette
