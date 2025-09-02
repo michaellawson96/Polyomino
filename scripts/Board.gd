@@ -454,8 +454,12 @@ func _compute_hard_drop_delta(piece: Polyomino) -> int:
 
 
 func _hard_drop_active() -> void:
-	if not _hard_drop_allowed:
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		if not Settings.get_cfg().hard_drop_enabled:
+			return
+	elif not _hard_drop_allowed:
 		return
+
 	if _state != GameState.ACTIVE_CONTROLLED:
 		return
 	var p := _get_active_polyomino()
