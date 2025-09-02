@@ -9,7 +9,7 @@ func _ready():
 	var ids: Array[String] = []
 	for d in POLY_DATA.get_all():
 		ids.append(String(d["id"]))
-	_spawn_board_with_mask("res://masks/zigzag.png", 26, ids, 0)
+	_spawn_board_with_mask("res://masks/10x20.png", 26, ids, 0)
 
 func _spawn_board_with_size(size:Vector2i, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
 	var board = board_scene.instantiate()

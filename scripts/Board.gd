@@ -367,6 +367,8 @@ func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
 	var poly: Polyomino = polyomino_scene.instantiate()
 	polyomino_container.add_child(poly)
 	poly.shape_key = id
+	if typeof(Palette) != TYPE_NIL:
+		poly.block_color = Palette.color_for_shape_key(id)
 	var blocks: Array[Vector2] = POLY_DATA.get_blocks(id)
 	var color: Color = (Palette.color_for_shape_key(id) if typeof(Palette) != TYPE_NIL else s["color"])
 	var min_x := 999999
@@ -477,7 +479,9 @@ func _lock_piece(piece: Polyomino) -> void:
 	var pid := _next_piece_id
 	_next_piece_id += 1
 	var shape_key := piece.shape_key
-	var color_to_use: Color = (Palette.color_for_shape_key(shape_key) if typeof(Palette) != TYPE_NIL else piece.block_color)
+	var color_to_use: Color = piece.block_color
+	if typeof(Palette) != TYPE_NIL and shape_key != "":
+		color_to_use = Palette.color_for_shape_key(shape_key)
 	for c in _piece_cells(piece):
 		var b: Block = block_scene.instantiate()
 		inactive_container.add_child(b)
@@ -1080,3 +1084,9 @@ func _on_palette_changed(p: PaletteData) -> void:
 	if act != null and act.shape_key != "":
 		act.block_color = Palette.color_for_shape_key(act.shape_key)
 
+func _apply_preview_shape_and_color(next_id: String) -> void:
+	if _queued_piece == null or not is_instance_valid(_queued_piece):
+		return
+	_queued_piece.shape_key = next_id
+	if typeof(Palette) != TYPE_NIL:
+		_queued_piece.block_color = Palette.color_for_shape_key(next_id)
