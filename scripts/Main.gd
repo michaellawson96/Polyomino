@@ -3,13 +3,15 @@ extends Node2D
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const EffectsManagerScript := preload("res://scripts/managers/EffectsManager.gd")
 const AudioManagerScript := preload("res://scripts/managers/AudioManager.gd")
-
+const DebugPanelScript := preload("res://scripts/ui/DebugPanel.gd")
+const ACTION_TOGGLE_DEBUG := "toggle_debug_panel"
 
 @onready var boards_container: Node = $BoardsContainer
 @onready var board_scene: PackedScene = preload("res://scenes/Board.tscn")
 
 var effects_manager: EffectsManager
 var audio_manager: AudioManager
+var debug_panel: DebugPanel
 
 
 func _ready():
@@ -17,12 +19,13 @@ func _ready():
 	add_child(effects_manager)
 	audio_manager = AudioManagerScript.new()
 	add_child(audio_manager)
+	debug_panel = DebugPanelScript.new()
+	add_child(debug_panel)
+	_ensure_debug_toggle_binding()
 	var ids: Array[String] = []
 	for d in POLY_DATA.get_all():
 		ids.append(String(d["id"]))
 	_spawn_board_with_mask("res://masks/10x20.png", 26, ids, 0)
-
-
 
 func _spawn_board_with_size(size:Vector2i, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
 	var board = board_scene.instantiate()
@@ -66,3 +69,15 @@ func _compute_top_padding_cells() -> int:
 		for off in s["blocks"]:
 			max_y = max(max_y, int(off.y))
 	return max_y + 1
+
+func _ensure_debug_toggle_binding() -> void:
+	if not InputMap.has_action(ACTION_TOGGLE_DEBUG):
+		InputMap.add_action(ACTION_TOGGLE_DEBUG)
+		var ev := InputEventKey.new()
+		ev.physical_keycode = KEY_F1
+		InputMap.action_add_event(ACTION_TOGGLE_DEBUG, ev)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(ACTION_TOGGLE_DEBUG):
+		if debug_panel != null and is_instance_valid(debug_panel):
+			debug_panel.visible = not debug_panel.visible
