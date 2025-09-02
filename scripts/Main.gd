@@ -2,24 +2,35 @@ extends Node2D
 
 const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 const EffectsManagerScript := preload("res://scripts/managers/EffectsManager.gd")
+const AudioManagerScript := preload("res://scripts/managers/AudioManager.gd")
+
 
 @onready var boards_container: Node = $BoardsContainer
 @onready var board_scene: PackedScene = preload("res://scenes/Board.tscn")
 
 var effects_manager: EffectsManager
+var audio_manager: AudioManager
+
 
 func _ready():
 	effects_manager = EffectsManagerScript.new()
 	add_child(effects_manager)
+	audio_manager = AudioManagerScript.new()
+	add_child(audio_manager)
 	var ids: Array[String] = []
 	for d in POLY_DATA.get_all():
 		ids.append(String(d["id"]))
 	_spawn_board_with_mask("res://masks/10x20.png", 26, ids, 0)
 
 
+
 func _spawn_board_with_size(size:Vector2i, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
 	var board = board_scene.instantiate()
 	boards_container.add_child(board)
+	if audio_manager == null or not is_instance_valid(audio_manager):
+		audio_manager = AudioManagerScript.new()
+		add_child(audio_manager)
+	audio_manager.attach_board(board)
 	if effects_manager == null or not is_instance_valid(effects_manager):
 		effects_manager = EffectsManagerScript.new()
 		add_child(effects_manager)
@@ -33,6 +44,11 @@ func _spawn_board_with_size(size:Vector2i, cell_size:int, bag_ids:Array[String],
 func _spawn_board_with_mask(png_path:String, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
 	var board = board_scene.instantiate()
 	boards_container.add_child(board)
+	if audio_manager == null or not is_instance_valid(audio_manager):
+		audio_manager = AudioManagerScript.new()
+		add_child(audio_manager)
+	audio_manager.attach_board(board)
+
 	if effects_manager == null or not is_instance_valid(effects_manager):
 		effects_manager = EffectsManagerScript.new()
 		add_child(effects_manager)

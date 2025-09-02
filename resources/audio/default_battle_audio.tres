@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="BattleAudioSet" load_steps=2 format=3 uid="uid://d18yb4yfa3kkc"]
+
+[ext_resource type="Script" path="res://resources/audio/BattleAudioSet.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
