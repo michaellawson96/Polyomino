@@ -21,11 +21,12 @@ func _on_settings_changed(key: String, _v) -> void:
 		_apply_from_settings()
 
 func _apply_from_settings() -> void:
-	var name := "Default"
+	var pal_name := "Default"
 	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
-		name = Settings.get_cfg().palette
+		pal_name = Settings.get_cfg().palette
 	var path := _DEFAULT_PATH
-	var n := (name if name != null else "Default").strip_edges().to_lower()
+	var n := (pal_name if pal_name != null else "Default").strip_edges().to_lower()
+
 	if n == "high contrast" or n == "high_contrast" or n == "highcontrast" or n == "hc":
 		path = _HC_PATH
 

@@ -21,7 +21,6 @@ func _ready():
 	add_child(audio_manager)
 	debug_panel = DebugPanelScript.new()
 	add_child(debug_panel)
-	_ensure_debug_toggle_binding()
 	var ids: Array[String] = []
 	for d in POLY_DATA.get_all():
 		ids.append(String(d["id"]))
@@ -69,13 +68,6 @@ func _compute_top_padding_cells() -> int:
 		for off in s["blocks"]:
 			max_y = max(max_y, int(off.y))
 	return max_y + 1
-
-func _ensure_debug_toggle_binding() -> void:
-	if not InputMap.has_action(ACTION_TOGGLE_DEBUG):
-		InputMap.add_action(ACTION_TOGGLE_DEBUG)
-		var ev := InputEventKey.new()
-		ev.physical_keycode = KEY_F1
-		InputMap.action_add_event(ACTION_TOGGLE_DEBUG, ev)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(ACTION_TOGGLE_DEBUG):
