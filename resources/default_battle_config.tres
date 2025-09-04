@@ -1,0 +1,9 @@
+[gd_resource type="BattleConfig" script_class="BattleConfig" load_steps=2 format=3 uid="uid://yj7mqbmr7bf"]
+
+[ext_resource type="Script" path="res://scripts/battle/BattleConfig.gd" id="1"]
+
+[resource]
+resource_local_to_scene = false
+resource_name = ""
+script = ExtResource("1")
+notes = "Default battle config (stub)."

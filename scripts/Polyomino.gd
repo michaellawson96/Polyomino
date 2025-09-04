@@ -44,6 +44,8 @@ func cycle_origin() -> void:
 	if block_offsets.is_empty(): return
 	origin_index = (origin_index + 1) % block_offsets.size()
 	_update_origin_marker()
+	queue_redraw()
+
 
 func _ensure_origin_marker() -> void:
 	if origin_marker == null:

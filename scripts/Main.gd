@@ -1,73 +1,31 @@
-extends Node2D
+extends Node
 
-const POLY_DATA := preload("res://scripts/PolyominoData.gd")
-const EffectsManagerScript := preload("res://scripts/managers/EffectsManager.gd")
-const AudioManagerScript := preload("res://scripts/managers/AudioManager.gd")
+const BATTLE_SCENE := preload("res://scenes/BattleScene.tscn")
 const DebugPanelScript := preload("res://scripts/ui/DebugPanel.gd")
 const ACTION_TOGGLE_DEBUG := "toggle_debug_panel"
 
-@onready var boards_container: Node = $BoardsContainer
-@onready var board_scene: PackedScene = preload("res://scenes/Board.tscn")
+var _root_scene: Node = null
+var debug_panel: DebugPanel = null
 
-var effects_manager: EffectsManager
-var audio_manager: AudioManager
-var debug_panel: DebugPanel
+func _ready() -> void:
+	_spawn_battle_scene()
+	_ensure_debug_panel()
+	_hide_debug_panel_on_boot()
 
+func _spawn_battle_scene() -> void:
+	if _root_scene != null and is_instance_valid(_root_scene):
+		_root_scene.queue_free()
+	_root_scene = BATTLE_SCENE.instantiate()
+	add_child(_root_scene)
 
-func _ready():
-	effects_manager = EffectsManagerScript.new()
-	add_child(effects_manager)
-	audio_manager = AudioManagerScript.new()
-	add_child(audio_manager)
-	debug_panel = DebugPanelScript.new()
-	add_child(debug_panel)
-	var ids: Array[String] = []
-	for d in POLY_DATA.get_all():
-		ids.append(String(d["id"]))
-	_spawn_board_with_mask("res://masks/10x20.png", 26, ids, 0)
+func _ensure_debug_panel() -> void:
+	if debug_panel == null or not is_instance_valid(debug_panel):
+		debug_panel = DebugPanelScript.new()
+		add_child(debug_panel)
 
-func _spawn_board_with_size(size:Vector2i, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
-	var board = board_scene.instantiate()
-	boards_container.add_child(board)
-	if audio_manager == null or not is_instance_valid(audio_manager):
-		audio_manager = AudioManagerScript.new()
-		add_child(audio_manager)
-	audio_manager.attach_board(board)
-	if effects_manager == null or not is_instance_valid(effects_manager):
-		effects_manager = EffectsManagerScript.new()
-		add_child(effects_manager)
-	effects_manager.attach_board(board)
-	var padding_cells := _compute_top_padding_cells()
-	board.position = Vector2(0, padding_cells * cell_size)
-	var ok:bool = board.setup_with_size(size, cell_size, bag_ids, rng_seed)
-	if not ok:
-		push_error("Board setup_with_size failed")
-
-func _spawn_board_with_mask(png_path:String, cell_size:int, bag_ids:Array[String], rng_seed:int)->void:
-	var board = board_scene.instantiate()
-	boards_container.add_child(board)
-	if audio_manager == null or not is_instance_valid(audio_manager):
-		audio_manager = AudioManagerScript.new()
-		add_child(audio_manager)
-	audio_manager.attach_board(board)
-
-	if effects_manager == null or not is_instance_valid(effects_manager):
-		effects_manager = EffectsManagerScript.new()
-		add_child(effects_manager)
-	effects_manager.attach_board(board)
-	var padding_cells := _compute_top_padding_cells()
-	board.position = Vector2(0, padding_cells * cell_size)
-	var ok:bool = board.setup_with_mask(png_path, cell_size, bag_ids, rng_seed)
-	if not ok:
-		push_error("Board setup_with_mask failed")
-
-
-func _compute_top_padding_cells() -> int:
-	var max_y := 0
-	for s in POLY_DATA.get_all():
-		for off in s["blocks"]:
-			max_y = max(max_y, int(off.y))
-	return max_y + 1
+func _hide_debug_panel_on_boot() -> void:
+	if debug_panel and debug_panel is CanvasItem:
+		(debug_panel as CanvasItem).visible = false
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(ACTION_TOGGLE_DEBUG):
