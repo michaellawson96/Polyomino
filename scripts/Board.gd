@@ -86,6 +86,7 @@ var _row_mask_counts:PackedInt32Array=PackedInt32Array()
 var rubble_jitter_px: int = 1
 var rubble_opacity: float = 0.75
 var _hard_drop_allowed: bool = true
+var _queue_node: Node = null
 
 
 func _ready():
@@ -108,11 +109,29 @@ func _ready():
 			Settings.connect("reloaded", Callable(self, "_on_settings_reloaded"))
 			Settings.connect("changed", Callable(self, "_on_settings_changed"))
 			_on_settings_reloaded(Settings.get_cfg())
-		if typeof(Palette) != TYPE_NIL:
-			Palette.connect("palette_changed", Callable(self, "_on_palette_changed"))
-			_on_palette_changed(Palette.current())
+		call_deferred("_reapply_block_opacity_all")
+	_setup_queue_palette_hooks()
 
 
+
+func _reapply_block_opacity_all() -> void:
+	for cell in _occupied.keys():
+		var b: Block = _occupied.get(cell) as Block
+		if b != null and is_instance_valid(b) and b.has_method("apply_opacity_from_settings"):
+			b.apply_opacity_from_settings()
+	var p: Node = _get_active_polyomino()
+	if p != null:
+		if p.has_method("reapply_block_opacity_from_settings"):
+			p.reapply_block_opacity_from_settings()
+		else:
+			var a: float = 1.0
+			if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+				a = clamp(Settings.get_cfg().block_opacity, 0.0, 1.0)
+			for c in p.get_children():
+				if c is CanvasItem:
+					var m: Color = (c as CanvasItem).modulate
+					m.a = a
+					(c as CanvasItem).modulate = m
 
 func _process(delta: float) -> void:
 	if _state == GameState.PRECONTROL_AUTOSLIDE:
@@ -837,23 +856,35 @@ func _spawn_queued_if_needed() -> void:
 		return
 	if _precreated_next_id == "":
 		return
-	var s: Dictionary = POLY_DATA.get_shape_with_color(_precreated_next_id)
-	if s.is_empty():
+
+	var next_id: String = _precreated_next_id
+	var blocks := POLY_DATA.get_blocks(next_id)
+	if blocks.is_empty():
 		return
-	var blocks: Array[Vector2] = POLY_DATA.get_blocks(_precreated_next_id)
-	var color: Color = s["color"]
-	var min_x := 999999
-	var max_y := -999999
+
+	var min_x: int = 2147483647
+	var max_y: int = -2147483647
 	for off in blocks:
 		min_x = min(min_x, int(off.x))
 		max_y = max(max_y, int(off.y))
-	var start_x := -min_x
-	var start_y := -max_y - 1
+	var start_x: int = -min_x
+	var start_y: int = -max_y - 1
+
+	var color: Color = Color.WHITE
+	if typeof(Palette) != TYPE_NIL:
+		color = Palette.color_for_shape_key(next_id)
+	else:
+		var h: float = float(abs(int(hash(next_id))) % 360) / 360.0
+		color = Color.from_hsv(h, 0.7, 0.9, 1.0)
+
 	var poly: Polyomino = polyomino_scene.instantiate()
 	queued_container.add_child(poly)
+	poly.shape_key = next_id
+	poly.block_color = color
 	poly.initialize(cell_size, Vector2(start_x, start_y), blocks, color)
 	poly.show_origin = true
 	poly._update_origin_marker()
+
 	_queued_piece = poly
 	_queued_conveyor_accum_ms = 0
 	_queued_fully_on_grid_once = false
@@ -981,27 +1012,27 @@ func _run_span_clear_cycle(spans: Array) -> void:
 		return
 	var by_row: Dictionary = {}
 	for d in spans:
-		var y: int = d["y"]
-		if not by_row.has(y):
-			by_row[y] = []
-		(by_row[y] as Array).append(d)
+		var row_y: int = d["y"]
+		if not by_row.has(row_y):
+			by_row[row_y] = []
+		(by_row[row_y] as Array).append(d)
 	var ys: Array[int] = int_dict_keys(by_row)
 	ys.sort()
 	ys.reverse()
-	var y: int = ys[0]
-	var row_spans: Array = by_row[y]
+	var top_y: int = ys[0]
+	var row_spans: Array = by_row[top_y]
 	row_spans.sort_custom(Callable(self, "_cmp_span_x0"))
 	var cut_ids_row: Array[int] = []
 	var cleared_row := {}
 	for seg in row_spans:
 		var x0: int = seg["x0"]
 		var x1: int = seg["x1"]
-		var cut_ids_this := await _clear_span_animate(y, x0, x1, cleared_row)
+		var cut_ids_this := await _clear_span_animate(top_y, x0, x1, cleared_row)
 		for id in cut_ids_this:
 			cut_ids_row.append(id)
-	emit_signal("rows_cleared", y, row_spans.size())
+	emit_signal("rows_cleared", top_y, row_spans.size())
 	_convert_survivors_to_rubble(cut_ids_row)
-	_masked_collapse_after_clear_one_row(cleared_row, y, row_spans)
+	_masked_collapse_after_clear_one_row(cleared_row, top_y, row_spans)
 
 func int_dict_keys(d:Dictionary) -> Array[int]:
 	var out:Array[int]=[]
@@ -1063,26 +1094,9 @@ func _on_settings_reloaded(cfg: GameConfig) -> void:
 	rubble_opacity = cfg.rubble_opacity
 	_hard_drop_allowed = cfg.hard_drop_enabled
 
-func _on_settings_changed(key: String, _value) -> void:
-	# For now just pull the whole cfg each time (cheap, keeps code compact)
-	var cfg := Settings.get_cfg()
-	if cfg == null: return
-	_on_settings_reloaded(cfg)
-
-func _on_palette_changed(p: PaletteData) -> void:
-	if p == null:
-		return
-	for cell in _occupied.keys():
-		var b: Block = _occupied[cell]
-		if b == null or not is_instance_valid(b):
-			continue
-		var col: Color = (Palette.color_for_shape_key(b.shape_key) if b.shape_key != "" else b.base_color)
-		b.apply_palette_color(col)
-		if b.rubble:
-			b.apply_rubble_opacity(p.rubble_tint.a)
-	var act := _get_active_polyomino()
-	if act != null and act.shape_key != "":
-		act.block_color = Palette.color_for_shape_key(act.shape_key)
+func _on_settings_changed(key: String, _value: Variant) -> void:
+	if key == "block_opacity":
+		_reapply_block_opacity_all()
 
 func _apply_preview_shape_and_color(next_id: String) -> void:
 	if _queued_piece == null or not is_instance_valid(_queued_piece):
@@ -1090,3 +1104,51 @@ func _apply_preview_shape_and_color(next_id: String) -> void:
 	_queued_piece.shape_key = next_id
 	if typeof(Palette) != TYPE_NIL:
 		_queued_piece.block_color = Palette.color_for_shape_key(next_id)
+
+func _setup_queue_palette_hooks() -> void:
+	_queue_node = _find_queue_node()
+	if _queue_node != null:
+		_queue_node.connect("child_entered_tree", Callable(self, "_on_queue_child_entered_tree"))
+		call_deferred("_recolor_queue_children")
+
+func _find_queue_node() -> Node:
+	var names: Array[String] = ["QueueContainer","QueueRoot","NextContainer","PreviewRoot","Queue"]
+	for n in names:
+		var node: Node = get_node_or_null(n)
+		if node != null:
+			return node
+	return null
+
+func _on_queue_child_entered_tree(child: Node) -> void:
+	_apply_queue_palette(child)
+
+func _recolor_queue_children() -> void:
+	if _queue_node == null:
+		return
+	for c in _queue_node.get_children():
+		_apply_queue_palette(c)
+
+func _apply_queue_palette(n: Node) -> void:
+	var key: String = ""
+	if n.has_method("get_shape_key"):
+		key = String(n.get_shape_key())
+	elif n.has_variable("shape_key"):
+		key = String(n.get("shape_key"))
+	if key == "":
+		return
+	var col: Color = Color.WHITE
+	if typeof(Palette) != TYPE_NIL:
+		col = Palette.color_for_shape_key(key)
+	if n.has_method("set_block_color"):
+		n.set_block_color(col)
+	if n.has_method("apply_palette_color"):
+		n.apply_palette_color(col)
+	for c in n.get_children():
+		if c.has_method("apply_palette_color"):
+			c.apply_palette_color(col)
+		elif c is CanvasItem:
+			var m: Color = (c as CanvasItem).modulate
+			m.r = col.r
+			m.g = col.g
+			m.b = col.b
+			(c as CanvasItem).modulate = m

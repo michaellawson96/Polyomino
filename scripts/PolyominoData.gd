@@ -60,4 +60,12 @@ static func get_blocks(id: String) -> Array[Vector2]:
 	out.resize(raw.size())
 	for i in raw.size():
 		out[i] = raw[i] as Vector2
-	return out
+	return out	
+
+func color_for_shape_key(key: String) -> Color:
+	if typeof(Palette) != TYPE_NIL:
+		return Palette.color_for_shape_key(key)
+	return Color.from_hsv(float((abs(int(hash(key))) % 360)) / 360.0, 0.7, 0.9, 1.0)
+
+func get_color_for_shape_key(key: String) -> Color:
+	return color_for_shape_key(key)

@@ -50,6 +50,11 @@ func _ready() -> void:
 		Settings.connect("reloaded",Callable(self,"_on_cfg"))
 		Settings.connect("changed",Callable(self,"_on_cfg_kv"))
 		_on_cfg(Settings.get_cfg())
+	_add_blocks_opacity_control_at_bottom()
+
+func _on_blocks_opacity_changed(v: float) -> void:
+	if typeof(Settings) != TYPE_NIL:
+		Settings.set_value("block_opacity", clamp(v, 0.0, 1.0))
 
 func _on_cfg(cfg) -> void:
 	if cfg==null: return
@@ -91,3 +96,42 @@ func _on_handle_gui_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _dragging:
 		var delta: Vector2 = get_viewport().get_mouse_position() - _drag_start
 		global_position = _panel_start + delta
+
+func _find_first_vbox(n: Node) -> VBoxContainer:
+	if n is VBoxContainer:
+		return n as VBoxContainer
+	for c in n.get_children():
+		var r := _find_first_vbox(c)
+		if r != null:
+			return r
+	return null
+
+func _add_blocks_opacity_control_at_bottom() -> void:
+	var host: VBoxContainer = _find_first_vbox(self)
+	if host == null:
+		host = VBoxContainer.new()
+		host.name = "AutoVBox"
+		add_child(host)
+	var box := HBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_STOP
+	box.add_to_group("__blocks_opacity_controls__")
+	host.add_child(box)
+	var lbl := Label.new()
+	lbl.text = "Blocks Opacity"
+	box.add_child(lbl)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.01
+	var initial_a: float = 0.65
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		initial_a = clamp(Settings.get_cfg().block_opacity, 0.0, 1.0)
+	slider.value = initial_a
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.focus_mode = Control.FOCUS_ALL
+	slider.mouse_filter = Control.MOUSE_FILTER_STOP
+	box.add_child(slider)
+	slider.connect("value_changed", Callable(self, "_on_blocks_opacity_changed"))
+	if self is Control:
+		var cur: Vector2 = (self as Control).custom_minimum_size
+		(self as Control).custom_minimum_size = Vector2(cur.x, cur.y + 56)

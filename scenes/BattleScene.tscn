@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://bqds5n5mt0si" path="res://scenes/Board.tscn" id="2"]
 [ext_resource type="Script" path="res://scripts/managers/EffectsManager.gd" id="3"]
 [ext_resource type="Script" path="res://scripts/managers/AudioManager.gd" id="4"]
-[ext_resource type="MissingResource" uid="uid://yj7mqbmr7bf" path="res://resources/default_battle_config.tres" id="5"]
+[ext_resource type="Resource" uid="uid://yj7mqbmr7bf" path="res://resources/default_battle_config.tres" id="5"]
 
 [sub_resource type="Gradient" id="G1"]
 colors = PackedColorArray(1, 0.9, 0.2, 1, 0.8, 0.2, 0.2, 1)
@@ -25,7 +25,7 @@ position = Vector2(96, 64)
 texture = SubResource("GT1")
 
 [node name="Board" parent="." instance=ExtResource("2")]
-modulate = Color(1, 1, 1, 0.85)
+modulate = Color(1, 1, 1, 1)
 
 [node name="UIRoot" type="CanvasLayer" parent="."]
 layer = 100

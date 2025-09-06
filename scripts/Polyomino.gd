@@ -145,3 +145,16 @@ func apply_offsets(new_offsets: Array[Vector2]) -> void:
 
 func get_shape_key() -> String:
 	return shape_key
+
+func _enter_tree() -> void:
+	reapply_block_opacity_from_settings()
+
+func reapply_block_opacity_from_settings() -> void:
+	var a: float = 1.0
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		a = clamp(Settings.get_cfg().block_opacity, 0.0, 1.0)
+	for c in get_children():
+		if c is CanvasItem:
+			var m: Color = (c as CanvasItem).modulate
+			m.a = a
+			(c as CanvasItem).modulate = m

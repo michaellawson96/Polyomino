@@ -19,3 +19,6 @@ class_name PaletteData
 @export var rubble_tint: Color = Color(1,1,1,0.75)
 @export var ghost_tint: Color = Color(1,1,1,0.35)
 @export var grid_line: Color = Color(1,1,1,0.18)
+
+@export var piece_base_color: Color = Color(0.20, 0.65, 0.95, 1.0)
+@export var shade_levels: PackedFloat32Array = PackedFloat32Array([0.30, 0.42, 0.54, 0.66, 0.78, 0.90])

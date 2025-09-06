@@ -15,6 +15,27 @@ var _cell_size: int = 32
 var shape_key: String = ""
 var base_color: Color = Color.WHITE
 
+func _ready() -> void:
+	if typeof(Settings) != TYPE_NIL:
+		Settings.connect("changed", Callable(self, "_on_settings_changed"))
+	apply_opacity_from_settings()
+
+func _on_settings_changed(key: String, _value: Variant) -> void:
+	if key == "block_opacity":
+		apply_opacity_from_settings()
+
+func apply_opacity_from_settings() -> void:
+	var a: float = 1.0
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		a = clamp(Settings.get_cfg().block_opacity, 0.0, 1.0)
+	if has_node("ColorRect"):
+		var cur: Color = $ColorRect.color
+		cur.a = a
+		$ColorRect.color = cur
+	elif self is CanvasItem:
+		var cur: Color = (self as CanvasItem).modulate
+		cur.a = a
+		(self as CanvasItem).modulate = cur
 
 func set_visual(cell_size: int, color: Color) -> void:
 	_cell_size = cell_size
@@ -95,13 +116,22 @@ func set_shape_key(key: String) -> void:
 	shape_key = key
 
 func apply_palette_color(color: Color) -> void:
-	base_color = color
-	if color_rect != null and not rubble:
-		color_rect.color = color
+	var base: Color = color
+	if typeof(Palette) != TYPE_NIL:
+		base = Palette.color_for_shape_key(String(shape_key))
+	var a: float = 1.0
+	if typeof(Settings) != TYPE_NIL and Settings.get_cfg() != null:
+		a = clamp(Settings.get_cfg().block_opacity, 0.0, 1.0)
+	var c: Color = base
+	c.a = a
+	if has_node("ColorRect"):
+		$ColorRect.color = c
+	elif self is CanvasItem:
+		(self as CanvasItem).modulate = c
+
 
 func apply_rubble_opacity(a: float) -> void:
 	if not rubble:
 		return
 	rubble_opacity = a
 	_build_rubble()
-

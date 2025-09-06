@@ -19,3 +19,5 @@ class_name GameConfig
 @export var bgm_volume_db: float = 0.0
 
 @export var palette: String = "Default"
+
+@export var block_opacity: float = 0.65
