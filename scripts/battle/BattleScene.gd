@@ -17,9 +17,54 @@ func _ready() -> void:
 		_effects.attach_board(_board)
 	if _audio != null and _audio.has_method("attach_board"):
 		_audio.attach_board(_board)
+	if battle_config == null:
+		var res: Resource = load("res://resources/default_battle_config.tres")
+		if res is BattleConfig:
+			battle_config = res
+	var ids_pre: Array[String] = []
+	for d in POLY_DATA.get_all():
+		ids_pre.append(String(d["id"]))
+	_apply_battle_palette_overrides_with_ids(ids_pre)
 	_setup_board_via_mask()
 	_apply_battle_palette_overrides()
 	call_deferred("_position_enemy_placeholder")
+
+func _apply_battle_palette_overrides() -> void:
+	var ids: Array[String] = []
+	if _board != null and _board.has_method("get_bag_ids"):
+		var v: Variant = _board.call("get_bag_ids")
+		if v is Array:
+			for x in v:
+				ids.append(String(x))
+	if ids.is_empty():
+		for d in POLY_DATA.get_all():
+			ids.append(String(d["id"]))
+	_apply_battle_palette_overrides_with_ids(ids)
+
+func _apply_battle_palette_overrides_with_ids(ids: Array[String]) -> void:
+	var min_v: float = 0.35
+	var max_v: float = 0.85
+	var hue: Color = Color(0.20, 0.65, 0.95, 1.0)
+	var forced: Dictionary = {}
+	if battle_config != null:
+		hue = battle_config.piece_base_color
+		min_v = clamp(battle_config.shade_min, 0.0, 1.0)
+		max_v = clamp(battle_config.shade_max, 0.0, 1.0)
+		forced = battle_config.forced_piece_colors
+	if max_v < min_v:
+		var t: float = min_v
+		min_v = max_v
+		max_v = t
+	var count: int = ids.size()
+	if count < 1:
+		count = 1
+	var levels: Array[float] = _equidistant_shades(min_v, max_v, count)
+	if typeof(Palette) != TYPE_NIL:
+		Palette.set_runtime_piece_base_color(hue)
+		Palette.set_runtime_shades(levels)
+		Palette.set_runtime_shade_index_map(ids)
+		if forced.size() > 0:
+			Palette.set_runtime_forced_colors(forced)
 
 func _setup_board_via_mask() -> void:
 	if _board == null:
@@ -30,7 +75,7 @@ func _setup_board_via_mask() -> void:
 	var cell_size: int = 26
 	var padding_cells: int = _compute_top_padding_cells()
 	_board.position = Vector2(0, float(padding_cells * cell_size))
-	var ok: bool = _board.setup_with_mask("res://masks/10x20.png", cell_size, ids, 0)
+	var ok: bool = _board.setup_with_mask("res://masks/n.png", cell_size, ids, 0)
 	if not ok:
 		push_error("Board setup_with_mask failed")
 
@@ -40,36 +85,6 @@ func _compute_top_padding_cells() -> int:
 		for off in s["blocks"]:
 			max_y = max(max_y, int(off.y))
 	return max_y + 1
-
-func _apply_battle_palette_overrides() -> void:
-	if _board == null:
-		return
-	var ids: Array[String] = []
-	if _board.has_method("get_bag_ids"):
-		var v: Variant = _board.call("get_bag_ids")
-		if v is Array:
-			for x in v:
-				ids.append(String(x))
-	if ids.is_empty():
-		for d in POLY_DATA.get_all():
-			ids.append(String(d["id"]))
-	var min_v: float = 0.35
-	var max_v: float = 0.85
-	if battle_config != null:
-		min_v = clamp(battle_config.shade_min, 0.0, 1.0)
-		max_v = clamp(battle_config.shade_max, 0.0, 1.0)
-	if max_v < min_v:
-		var t: float = min_v
-		min_v = max_v
-		max_v = t
-	var count: int = max(1, ids.size())
-	var levels: Array[float] = _equidistant_shades(min_v, max_v, count)
-	if battle_config != null:
-		Palette.set_runtime_piece_base_color(battle_config.piece_base_color)
-	else:
-		Palette.set_runtime_piece_base_color(Color(0.20, 0.65, 0.95, 1.0))
-	Palette.set_runtime_shades(levels)
-	Palette.set_runtime_shade_index_map(ids)
 
 func _equidistant_shades(min_v: float, max_v: float, n: int) -> Array[float]:
 	var out: Array[float] = []

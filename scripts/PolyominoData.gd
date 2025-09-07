@@ -28,29 +28,6 @@ static func get_shape(id: String) -> Dictionary:
 			return s
 	return {}
 
-const PALETTE: Array[Color] = [
-	Color8( 66, 135, 245),
-	Color8(245, 130,  48),
-	Color8( 60, 180,  75),
-	Color8(145,  30, 180),
-	Color8(240,  50, 230),
-	Color8(128, 128,   0),
-	Color8( 70, 240, 240),
-	Color8(230,  25,  75),
-]
-
-static func get_color(id: String) -> Color:
-	var idx: int = abs(hash(id)) % PALETTE.size()
-	return PALETTE[idx]
-
-static func get_shape_with_color(id: String) -> Dictionary:
-	var s := get_shape(id)
-	if s.is_empty():
-		return {}
-	var out := s.duplicate(true)
-	out["color"] = get_color(id)
-	return out
-
 static func get_blocks(id: String) -> Array[Vector2]:
 	var s := get_shape(id)
 	if s.is_empty():
@@ -65,7 +42,7 @@ static func get_blocks(id: String) -> Array[Vector2]:
 func color_for_shape_key(key: String) -> Color:
 	if typeof(Palette) != TYPE_NIL:
 		return Palette.color_for_shape_key(key)
-	return Color.from_hsv(float((abs(int(hash(key))) % 360)) / 360.0, 0.7, 0.9, 1.0)
+	return Color(0.20, 0.65, 0.95, 1.0)
 
 func get_color_for_shape_key(key: String) -> Color:
 	return color_for_shape_key(key)

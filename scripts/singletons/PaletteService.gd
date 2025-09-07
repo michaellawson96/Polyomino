@@ -11,6 +11,7 @@ var _rt_piece_base_color_set: bool = false
 var _rt_piece_base_color: Color = Color.WHITE
 var _rt_shade_levels: Array[float] = []
 var _rt_shade_index_for_key: Dictionary = {}
+var _rt_forced_colors: Dictionary = {}
 
 func _ready() -> void:
 	if typeof(Settings) != TYPE_NIL:
@@ -35,10 +36,15 @@ func set_runtime_shade_index_map(ids: Array[String]) -> void:
 		_rt_shade_index_for_key[ids[i]] = i
 	emit_signal("palette_changed", current())
 
+func set_runtime_forced_colors(dict: Dictionary) -> void:
+	_rt_forced_colors = dict.duplicate()
+	emit_signal("palette_changed", current())
+
 func clear_runtime_overrides() -> void:
 	_rt_piece_base_color_set = false
 	_rt_shade_levels.clear()
 	_rt_shade_index_for_key.clear()
+	_rt_forced_colors.clear()
 	emit_signal("palette_changed", current())
 
 func _on_settings_reloaded(_cfg) -> void:
@@ -71,6 +77,12 @@ func current() -> PaletteData:
 	return _palette
 
 func color_for_shape_key(key: String) -> Color:
+	# 1) Explicit per-piece override wins
+	if _rt_forced_colors.has(key):
+		var cvar: Variant = _rt_forced_colors[key]
+		if cvar is Color:
+			return cvar
+	# 2) Single hue + shades (canonical)
 	var base: Color = _piece_base_hue()
 	var levels: Array[float] = _shade_levels()
 	if levels.is_empty():
@@ -85,19 +97,23 @@ func color_for_shape_key(key: String) -> Color:
 
 
 func _piece_base_hue() -> Color:
+	# battle-provided runtime hue
 	if _rt_piece_base_color_set:
 		return _rt_piece_base_color
+	# palette file optional default (kept for ghost/grid cohesion)
 	var pal: PaletteData = current()
 	if pal != null:
 		var c_var: Variant = pal.get("piece_base_color")
 		if c_var is Color:
-			var c: Color = c_var
-			return c
+			return c_var
+	# safe fallback hue
 	return Color(0.20, 0.65, 0.95, 1.0)
 
 func _shade_levels() -> Array[float]:
+	# battle-provided levels
 	if _rt_shade_levels.size() > 0:
 		return _rt_shade_levels
+	# palette file optional default (kept for theming)
 	var pal: PaletteData = current()
 	if pal != null:
 		var v: Variant = pal.get("shade_levels")
@@ -108,6 +124,7 @@ func _shade_levels() -> Array[float]:
 				out.append(float(arr[i]))
 			if out.size() > 0:
 				return out
+	# crisp defaults
 	return [0.30, 0.42, 0.54, 0.66, 0.78, 0.90]
 
 

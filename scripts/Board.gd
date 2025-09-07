@@ -379,7 +379,16 @@ func _coerce_all_pieces_into_bounds() -> void:
 		_coerce_piece_into_horizontal_bounds(p)
 
 func _spawn_from_id(id: String, use_precontrol: bool = true) -> void:
-	var s: Dictionary = POLY_DATA.get_shape_with_color(id)
+	var polyblocks := POLY_DATA.get_blocks(id)
+	if polyblocks.is_empty():
+		return
+	var polycolor: Color = Color(0.20, 0.65, 0.95, 1.0)
+	if typeof(Palette) != TYPE_NIL:
+		polycolor = Palette.color_for_shape_key(id)
+	var s: Dictionary = {}
+	s["id"] = id
+	s["blocks"] = polyblocks
+	s["color"] = polycolor
 	if s.is_empty():
 		push_warning("Unknown shape id: %s" % id)
 		return
@@ -971,14 +980,21 @@ func setup_with_size(size:Vector2i, cs:int, bag_ids:Array[String], rng_seed:int=
 	_spawn_from_id(_bag_next(),true)
 	return true
 
-func setup_with_mask(png_path:String, cs:int, bag_ids:Array[String], rng_seed:int=0)->bool:
-	var low:=png_path.to_lower()
-	if not low.ends_with(".png"):
-		return false
-	var img:Image=Image.new()
-	var err:int=img.load(png_path)
-	if err!=OK:
-		return false
+func setup_with_mask(mask_path:String, cs:int, bag_ids:Array[String], rng_seed:int=0)->bool:
+	var img: Image = null
+	var res: Resource = load(mask_path)
+	if res is Texture2D:
+		img = (res as Texture2D).get_image()
+	elif res is Image:
+		img = res as Image
+	else:
+		var tmp := Image.new()
+		var err: int = tmp.load(mask_path)
+		if err == OK:
+			img = tmp
+		else:
+			push_error("Failed to load mask: " + str(mask_path))
+			return false
 	board_width=img.get_width()
 	board_height=img.get_height()
 	cell_size=cs

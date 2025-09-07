@@ -71,8 +71,8 @@ func _on_cfg_kv(_k:String,_v) -> void:
 	_on_cfg(Settings.get_cfg())
 
 func _on_palette_selected(index:int) -> void:
-	var name:=("Default" if index==0 else "High Contrast")
-	if typeof(Settings)!=TYPE_NIL: Settings.set_value("palette",name)
+	var entry_name:=("Default" if index==0 else "High Contrast")
+	if typeof(Settings)!=TYPE_NIL: Settings.set_value("palette",entry_name)
 
 func _on_hard_toggled(pressed:bool) -> void:
 	if typeof(Settings)!=TYPE_NIL: Settings.set_value("hard_drop_enabled",pressed)
