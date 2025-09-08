@@ -33,6 +33,31 @@ layer = 100
 layout_mode = 3
 anchors_preset = 0
 
+[node name="MenuRoot" type="Control" parent="UIRoot/HUDRoot"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuBackdrop" type="Panel" parent="UIRoot/HUDRoot/MenuRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuLabel" type="Label" parent="UIRoot/HUDRoot/MenuRoot"]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 24.0
+text = "Battle Menu
+Esc toggles
+Hold Shift keeps open"
+
 [node name="Managers" type="Node" parent="."]
 
 [node name="EffectsManager" type="Node" parent="Managers"]

@@ -87,6 +87,8 @@ var rubble_jitter_px: int = 1
 var rubble_opacity: float = 0.75
 var _hard_drop_allowed: bool = true
 var _queue_node: Node = null
+var _visuals_hidden: bool = false
+
 
 
 func _ready():
@@ -134,6 +136,8 @@ func _reapply_block_opacity_all() -> void:
 					(c as CanvasItem).modulate = m
 
 func _process(delta: float) -> void:
+	if _state == GameState.PAUSED:
+		return
 	if _state == GameState.PRECONTROL_AUTOSLIDE:
 		_update_precontrol(delta)
 		return
@@ -157,12 +161,8 @@ func _process(delta: float) -> void:
 		rate *= soft_drop_multiplier
 	_accum_cells += delta * rate
 	while _accum_cells >= 1.0:
-		_accum_cells -= 1.0
 		_step_fall(1)
-	while _accum_cells <= -1.0:
-		_accum_cells += 1.0
-		_step_fall(-1)
-
+		_accum_cells -= 1.0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_toggle"):
@@ -575,6 +575,8 @@ func _update_cell_size_for_children() -> void:
 	_refresh_overlay()
 
 func _update_ghost() -> void:
+	if _visuals_hidden:
+		return
 	if ghost_overlay == null:
 		return
 	if _state != GameState.ACTIVE_CONTROLLED:
@@ -918,10 +920,26 @@ func _is_piece_fully_in_grid(p: Polyomino) -> bool:
 		min_local_y = min(min_local_y, int(off.y))
 	return int(p.grid_position.y) + min_local_y >= 0
 
-func _enter_state(s:int)->void:
+func _enter_state(s: int) -> void:
 	_prev_state = _state
 	_state = s
 	print("[State] -> ", ["PRECONTROL_AUTOSLIDE","ACTIVE_CONTROLLED","LINE_CLEAR","PAUSED"][s])
+	if _state == GameState.PAUSED:
+		_hold_left = false
+		_hold_right = false
+		_hold_dir = 0
+		_hold_timer_ms = -1
+
+func set_paused(p: bool) -> void:
+	if p:
+		if _state != GameState.PAUSED:
+			_enter_state(GameState.PAUSED)
+	else:
+		if _state == GameState.PAUSED:
+			_enter_state(_prev_state)
+
+func is_paused() -> bool:
+	return _state == GameState.PAUSED
 
 func _call_mask_resize()->void:
 	if board_mask==null:
@@ -1168,3 +1186,18 @@ func _apply_queue_palette(n: Node) -> void:
 			m.g = col.g
 			m.b = col.b
 			(c as CanvasItem).modulate = m
+
+func set_visuals_hidden(h: bool) -> void:
+	_visuals_hidden = h
+	if is_instance_valid(polyomino_container):
+		polyomino_container.visible = not h
+	if is_instance_valid(queued_container):
+		queued_container.visible = not h
+	if is_instance_valid(inactive_container):
+		inactive_container.visible = not h
+	if is_instance_valid(ghost_overlay) and ghost_overlay is CanvasItem:
+		(ghost_overlay as CanvasItem).visible = (not h) and _state == GameState.ACTIVE_CONTROLLED
+	queue_redraw()
+
+func is_line_clearing() -> bool:
+	return _state == GameState.LINE_CLEAR

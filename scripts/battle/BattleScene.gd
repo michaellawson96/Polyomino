@@ -8,11 +8,19 @@ const POLY_DATA := preload("res://scripts/PolyominoData.gd")
 var _board: Node = null
 var _effects: Node = null
 var _audio: Node = null
+var _menu_root: Control = null
+var _menu_open: bool = false
+var _menu_mode: String = "" # "toggle" or "hold"
+var _hold_active: bool = false
+
 
 func _ready() -> void:
 	_board = $Board
 	_effects = $Managers/EffectsManager
 	_audio = $Managers/AudioManager
+	_menu_root = $UIRoot/HUDRoot/MenuRoot
+	_menu_set_visible(false)
+	_ensure_menu_actions()
 	if _effects != null and _effects.has_method("attach_board"):
 		_effects.attach_board(_board)
 	if _audio != null and _audio.has_method("attach_board"):
@@ -28,6 +36,99 @@ func _ready() -> void:
 	_setup_board_via_mask()
 	_apply_battle_palette_overrides()
 	call_deferred("_position_enemy_placeholder")
+
+func _ensure_menu_actions() -> void:
+	if not InputMap.has_action("battle_menu_toggle"):
+		InputMap.add_action("battle_menu_toggle")
+	if not InputMap.has_action("battle_menu_hold"):
+		InputMap.add_action("battle_menu_hold")
+	var esc := InputEventKey.new()
+	esc.physical_keycode = KEY_ESCAPE
+	InputMap.action_erase_events("battle_menu_toggle")
+	InputMap.action_add_event("battle_menu_toggle", esc)
+	InputMap.action_erase_events("battle_menu_hold")
+	var sh := InputEventKey.new()
+	sh.physical_keycode = KEY_SHIFT
+	InputMap.action_add_event("battle_menu_hold", sh)
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("battle_menu_toggle"):
+		if _menu_open:
+			if _menu_mode == "toggle":
+				_close_menu()
+		else:
+			if not _hold_active:
+				_open_menu("toggle")
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("battle_menu_hold"):
+		_hold_active = true
+		if not _menu_open:
+			_open_menu("hold")
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_released("battle_menu_hold"):
+		_hold_active = false
+		if _menu_open and _menu_mode == "hold":
+			_close_menu()
+		get_viewport().set_input_as_handled()
+		return
+	if _menu_open:
+		get_viewport().set_input_as_handled()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _menu_open:
+		get_viewport().set_input_as_handled()
+
+func _open_menu(mode: String) -> void:
+	if _board != null and _board.has_method("is_line_clearing"):
+		var lc : bool = _board.call("is_line_clearing")
+		if lc == true:
+			return
+	_menu_mode = mode
+	_menu_set_visible(true)
+	_release_all_actions()
+	if _board != null and _board.has_method("set_visuals_hidden"):
+		_board.call("set_visuals_hidden", true)
+	_set_board_paused(true)
+	_menu_open = true
+	print("[BATTLE] menu_open=true mode=", mode)
+
+func _close_menu() -> void:
+	_menu_set_visible(false)
+	_release_all_actions()
+	if _board != null and _board.has_method("set_visuals_hidden"):
+		_board.call("set_visuals_hidden", false)
+	_set_board_paused(false)
+	_menu_open = false
+	_menu_mode = ""
+	print("[BATTLE] menu_open=false")
+
+func _menu_set_visible(v: bool) -> void:
+	if _menu_root != null:
+		_menu_root.visible = v
+		if v:
+			_menu_root.grab_focus()
+		else:
+			_menu_root.release_focus()
+
+func _set_board_paused(p: bool) -> void:
+	if _board == null:
+		return
+	if _board.has_method("set_paused"):
+		_board.call("set_paused", p)
+
+func _release_all_actions() -> void:
+	var acts := InputMap.get_actions()
+	for a in acts:
+		Input.action_release(a)
+	var keys: Array[int] = [KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_A, KEY_D, KEY_S, KEY_W]
+	for k in keys:
+		if Input.is_physical_key_pressed(k):
+			var ev := InputEventKey.new()
+			ev.physical_keycode = k
+			ev.pressed = false
+			Input.parse_input_event(ev)
 
 func _apply_battle_palette_overrides() -> void:
 	var ids: Array[String] = []
@@ -75,7 +176,7 @@ func _setup_board_via_mask() -> void:
 	var cell_size: int = 26
 	var padding_cells: int = _compute_top_padding_cells()
 	_board.position = Vector2(0, float(padding_cells * cell_size))
-	var ok: bool = _board.setup_with_mask("res://masks/n.png", cell_size, ids, 0)
+	var ok: bool = _board.setup_with_mask("res://masks/10x20.png", cell_size, ids, 0)
 	if not ok:
 		push_error("Board setup_with_mask failed")
 
