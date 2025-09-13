@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3 uid="uid://5wbi0v47xd5f"]
+[gd_scene load_steps=9 format=3 uid="uid://5wbi0v47xd5f"]
 
 [ext_resource type="Script" path="res://scripts/battle/BattleScene.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://bqds5n5mt0si" path="res://scenes/Board.tscn" id="2"]
 [ext_resource type="Script" path="res://scripts/managers/EffectsManager.gd" id="3"]
 [ext_resource type="Script" path="res://scripts/managers/AudioManager.gd" id="4"]
 [ext_resource type="Resource" uid="uid://t3o7tyxu71jc" path="res://resources/default_battle_config.tres" id="5"]
+[ext_resource type="Script" path="res://scripts/ui/SegmentBar.gd" id="10"]
 
 [sub_resource type="Gradient" id="G1"]
 colors = PackedColorArray(1, 0.9, 0.2, 1, 0.8, 0.2, 0.2, 1)
@@ -32,6 +33,65 @@ layer = 100
 [node name="HUDRoot" type="Control" parent="UIRoot"]
 layout_mode = 3
 anchors_preset = 0
+
+[node name="RightHUD" type="Control" parent="UIRoot/HUDRoot"]
+z_index = 10
+layout_mode = 3
+anchors_preset = 0
+
+[node name="EnemyRail" type="Control" parent="UIRoot/HUDRoot/RightHUD"]
+anchors_preset = 0
+
+[node name="EnemyRailBar" type="Control" parent="UIRoot/HUDRoot/RightHUD/EnemyRail"]
+anchors_preset = 0
+script = ExtResource("10")
+max_value = 20
+value = 20
+
+[node name="EnemyLabel" type="Label" parent="UIRoot/HUDRoot/RightHUD/EnemyRail"]
+layout_mode = 0
+text = "E
+N
+E
+M
+Y
+
+H
+P"
+
+[node name="PlayerRail" type="Control" parent="UIRoot/HUDRoot/RightHUD"]
+anchors_preset = 0
+
+[node name="PlayerRailBar" type="Control" parent="UIRoot/HUDRoot/RightHUD/PlayerRail"]
+anchors_preset = 0
+script = ExtResource("10")
+max_value = 20
+value = 20
+
+[node name="PlayerLabel" type="Label" parent="UIRoot/HUDRoot/RightHUD/PlayerRail"]
+layout_mode = 0
+text = "Y
+O
+U
+R
+
+H
+P"
+
+[node name="APArea" type="Control" parent="UIRoot/HUDRoot/RightHUD"]
+anchors_preset = 0
+
+[node name="APBar" type="Control" parent="UIRoot/HUDRoot/RightHUD/APArea"]
+anchors_preset = 0
+script = ExtResource("10")
+max_value = 500
+vertical = false
+empty_color = Color(0.35, 0.28, 0.02, 1)
+fill_color = Color(0.95, 0.85, 0.25, 1)
+
+[node name="APLabel" type="Label" parent="UIRoot/HUDRoot/RightHUD/APArea"]
+layout_mode = 0
+text = "ACTION POINTS 0/500"
 
 [node name="MenuRoot" type="Control" parent="UIRoot/HUDRoot"]
 visible = false

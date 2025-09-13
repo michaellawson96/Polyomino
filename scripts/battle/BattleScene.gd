@@ -13,6 +13,25 @@ var _menu_open: bool = false
 var _menu_mode: String = "" # "toggle" or "hold"
 var _hold_active: bool = false
 
+@onready var enemy_bar: Control = $UIRoot/HUDRoot/RightHUD/EnemyRail/EnemyRailBar
+@onready var enemy_label: Label = $UIRoot/HUDRoot/RightHUD/EnemyRail/EnemyLabel
+@onready var player_bar: Control = $UIRoot/HUDRoot/RightHUD/PlayerRail/PlayerRailBar
+@onready var player_label: Label = $UIRoot/HUDRoot/RightHUD/PlayerRail/PlayerLabel
+@onready var ap_bar: Control = $UIRoot/HUDRoot/RightHUD/APArea/APBar
+@onready var ap_label: Label = $UIRoot/HUDRoot/RightHUD/APArea/APLabel
+
+var _hp_player: int = 20
+var _hp_player_max: int = 20
+var _hp_enemy: int = 20
+var _hp_enemy_max: int = 20
+var _ap: int = 0
+var _ap_max: int = 500
+var _combo: int = 0
+var _combo_timer: Timer = null
+var _gap_px: int = 8
+var _bar_w: int = 0
+
+
 
 func _ready() -> void:
 	_board = $Board
@@ -36,6 +55,11 @@ func _ready() -> void:
 	_setup_board_via_mask()
 	_apply_battle_palette_overrides()
 	call_deferred("_position_enemy_placeholder")
+	_setup_combo_timer()
+	_connect_board_hud_signals()
+	_update_bars_geometry()
+	_update_bars_values()
+
 
 func _ensure_menu_actions() -> void:
 	if not InputMap.has_action("battle_menu_toggle"):
@@ -240,3 +264,109 @@ func _position_enemy_placeholder() -> void:
 func _exit_tree() -> void:
 	if typeof(Palette) != TYPE_NIL:
 		Palette.clear_runtime_overrides()
+
+func _update_bars_geometry() -> void:
+	if _board == null:
+		return
+	var cell: int = 26
+	if "cell_size" in _board:
+		cell = int(_board.cell_size)
+	var cols: int = 10
+	if "board_width" in _board:
+		cols = int(_board.board_width)
+	var rows: int = 20
+	if "board_height" in _board:
+		rows = int(_board.board_height)
+	_bar_w = max(12, cell)
+	var board_px_w: int = cols * cell
+	var board_px_h: int = rows * cell
+
+	# Shift board right to make room for left rail + label
+	var desired_left_margin: int = _bar_w * 5
+	var current_left := int(_board.position.x)
+	if current_left < desired_left_margin:
+		_board.position.x = float(desired_left_margin)
+
+	# Enemy rail (left of board), label to its left
+	if enemy_bar and enemy_label:
+		var ex: float = _board.position.x - float(_gap_px) - float(_bar_w)
+		var ey: float = _board.position.y
+		var label_w: float = float(enemy_label.size.x)
+		enemy_label.position = Vector2(0, 0)
+		enemy_bar.position = Vector2(label_w + 4.0, 0.0)
+		var enemy_root := enemy_bar.get_parent() as Control
+		if enemy_root:
+			enemy_root.position = Vector2(ex - label_w - 4.0, ey)
+		enemy_bar.custom_minimum_size = Vector2(float(_bar_w), float(board_px_h))
+		enemy_bar.size = enemy_bar.custom_minimum_size
+
+	# Player rail (right of board), label to its right
+	if player_bar and player_label:
+		var px: float = _board.position.x + float(board_px_w) + float(_gap_px)
+		var py: float = _board.position.y
+		player_bar.position = Vector2(0, 0)
+		var player_root := player_bar.get_parent() as Control
+		if player_root:
+			player_root.position = Vector2(px, py)
+		player_bar.custom_minimum_size = Vector2(float(_bar_w), float(board_px_h))
+		player_bar.size = player_bar.custom_minimum_size
+		player_label.position = Vector2(float(_bar_w) + 4.0, 0.0)
+
+	# AP bar (bottom of board)
+	if ap_bar and ap_label:
+		var ax: float = _board.position.x
+		var ay: float = _board.position.y + float(board_px_h) + float(_gap_px)
+		var ap_root := ap_bar.get_parent() as Control
+		if ap_root:
+			ap_root.position = Vector2(ax, ay)
+		ap_bar.position = Vector2(0, 0)
+		ap_bar.custom_minimum_size = Vector2(float(board_px_w), float(max(10, int(cell * 0.5))))
+		ap_bar.size = ap_bar.custom_minimum_size
+		ap_label.position = Vector2(0.0, float(ap_bar.size.y + 4.0))
+
+func _update_bars_values() -> void:
+	if enemy_bar:
+		enemy_bar.set("max_value", _hp_enemy_max)
+		enemy_bar.set("value", _hp_enemy)
+	if player_bar:
+		player_bar.set("max_value", _hp_player_max)
+		player_bar.set("value", _hp_player)
+	if ap_bar:
+		ap_bar.set("max_value", _ap_max)
+		ap_bar.set("value", _ap)
+	if ap_label:
+		ap_label.text = "ACTION POINTS " + str(_ap) + "/" + str(_ap_max)
+
+func _connect_board_hud_signals() -> void:
+	if _board == null:
+		return
+	if _board.has_signal("rows_cleared_blocks"):
+		_board.connect("rows_cleared_blocks", Callable(self, "_on_rows_cleared_blocks"))
+
+func _setup_combo_timer() -> void:
+	_combo_timer = Timer.new()
+	_combo_timer.one_shot = true
+	_combo_timer.autostart = false
+	_combo_timer.wait_time = 1.2
+	add_child(_combo_timer)
+	_combo_timer.connect("timeout", Callable(self, "_on_combo_timeout"))
+
+func _on_combo_timeout() -> void:
+	_combo = 0
+
+func _increment_combo() -> void:
+	if _combo <= 0:
+		_combo = 1
+	else:
+		_combo += 1
+
+func _reset_combo_timer() -> void:
+	if _combo_timer != null:
+		_combo_timer.start()
+
+func _on_rows_cleared_blocks(y: int, block_count: int, span_count: int) -> void:
+	_increment_combo()
+	var award: int = max(0, block_count) * max(1, _combo)
+	_ap = clamp(_ap + award, 0, _ap_max)
+	_update_bars_values()
+	_reset_combo_timer()

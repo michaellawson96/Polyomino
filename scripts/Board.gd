@@ -20,6 +20,8 @@ signal rubble_spawned(count: int)
 signal critical_started(active: bool)
 signal bag_reconfig_ok(ids: Array[String])
 signal bag_reconfig_fail(ids: Array[String])
+signal rows_cleared_blocks(y: int, block_count: int, span_count: int)
+
 
 
 @export_range(1, 100) var board_width: int = 10:
@@ -1040,7 +1042,6 @@ func _find_full_spans() -> Array[Dictionary]:
 		occ[cell]=true
 	return ClearCollapseMod.find_full_spans(board_mask, board_width, board_height, occ)
 
-
 func _run_span_clear_cycle(spans: Array) -> void:
 	if spans.is_empty():
 		return
@@ -1058,15 +1059,19 @@ func _run_span_clear_cycle(spans: Array) -> void:
 	row_spans.sort_custom(Callable(self, "_cmp_span_x0"))
 	var cut_ids_row: Array[int] = []
 	var cleared_row := {}
+	var total_blocks: int = 0
 	for seg in row_spans:
 		var x0: int = seg["x0"]
 		var x1: int = seg["x1"]
+		total_blocks += (x1 - x0 + 1)
 		var cut_ids_this := await _clear_span_animate(top_y, x0, x1, cleared_row)
 		for id in cut_ids_this:
 			cut_ids_row.append(id)
 	emit_signal("rows_cleared", top_y, row_spans.size())
+	emit_signal("rows_cleared_blocks", top_y, total_blocks, row_spans.size())
 	_convert_survivors_to_rubble(cut_ids_row)
 	_masked_collapse_after_clear_one_row(cleared_row, top_y, row_spans)
+
 
 func int_dict_keys(d:Dictionary) -> Array[int]:
 	var out:Array[int]=[]
