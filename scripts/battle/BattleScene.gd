@@ -327,15 +327,19 @@ func _update_bars_geometry() -> void:
 func _update_bars_values() -> void:
 	if enemy_bar:
 		enemy_bar.set("max_value", _hp_enemy_max)
+		enemy_bar.set("segment_unit", 1)
 		enemy_bar.set("value", _hp_enemy)
 	if player_bar:
 		player_bar.set("max_value", _hp_player_max)
+		player_bar.set("segment_unit", 1)
 		player_bar.set("value", _hp_player)
 	if ap_bar:
 		ap_bar.set("max_value", _ap_max)
+		ap_bar.set("segment_unit", 10) # must divide _ap_max; adjust as needed
 		ap_bar.set("value", _ap)
 	if ap_label:
 		ap_label.text = "ACTION POINTS " + str(_ap) + "/" + str(_ap_max)
+
 
 func _connect_board_hud_signals() -> void:
 	if _board == null:
