@@ -12,6 +12,9 @@ var _menu_root: Control = null
 var _menu_open: bool = false
 var _menu_mode: String = "" # "toggle" or "hold"
 var _hold_active: bool = false
+var _points_per_cell: int = 1
+var _combo_cap: int = 3
+var _in_chain: bool = false
 
 @onready var enemy_bar: Control = $UIRoot/HUDRoot/RightHUD/EnemyRail/EnemyRailBar
 @onready var enemy_label: Label = $UIRoot/HUDRoot/RightHUD/EnemyRail/EnemyLabel
@@ -54,11 +57,19 @@ func _ready() -> void:
 	_apply_battle_palette_overrides_with_ids(ids_pre)
 	_setup_board_via_mask()
 	_apply_battle_palette_overrides()
+	_load_points_config()
 	call_deferred("_position_enemy_placeholder")
 	_setup_combo_timer()
 	_connect_board_hud_signals()
 	_update_bars_geometry()
 	_update_bars_values()
+
+func _load_points_config() -> void:
+	if battle_config != null:
+		if "points_per_cell" in battle_config:
+			_points_per_cell = max(1, int(battle_config.points_per_cell))
+		if "combo_cap" in battle_config:
+			_combo_cap = max(1, int(battle_config.combo_cap))
 
 
 func _ensure_menu_actions() -> void:
@@ -100,7 +111,7 @@ func _input(event: InputEvent) -> void:
 	if _menu_open:
 		get_viewport().set_input_as_handled()
 
-func _unhandled_input(event: InputEvent) -> void:
+func _unhandled_input(_event: InputEvent) -> void:
 	if _menu_open:
 		get_viewport().set_input_as_handled()
 
@@ -346,6 +357,9 @@ func _connect_board_hud_signals() -> void:
 		return
 	if _board.has_signal("rows_cleared_blocks"):
 		_board.connect("rows_cleared_blocks", Callable(self, "_on_rows_cleared_blocks"))
+	if _board.has_signal("spawn_autoslide_started"):
+		_board.connect("spawn_autoslide_started", Callable(self, "_on_spawn_autoslide_started"))
+
 
 func _setup_combo_timer() -> void:
 	_combo_timer = Timer.new()
@@ -368,9 +382,49 @@ func _reset_combo_timer() -> void:
 	if _combo_timer != null:
 		_combo_timer.start()
 
-func _on_rows_cleared_blocks(y: int, block_count: int, span_count: int) -> void:
+func _on_rows_cleared_blocks(_y: int, block_count: int, _span_count: int) -> void:
 	_increment_combo()
 	var award: int = max(0, block_count) * max(1, _combo)
 	_ap = clamp(_ap + award, 0, _ap_max)
 	_update_bars_values()
 	_reset_combo_timer()
+
+func _on_rows_cleared_blocks_points(_y: int, block_count: int, _span_count: int) -> void:
+	if not _in_chain:
+		_combo = 1
+		_in_chain = true
+	else:
+		_combo = min(_combo + 1, _combo_cap)
+	var blocks: int = max(0, block_count)
+	var award: int = blocks * _points_per_cell * max(1, _combo)
+	_add_points(award)
+
+func _on_spawn_autoslide_started() -> void:
+	_combo = 0
+	_in_chain = false
+
+func _add_points(delta: int) -> void:
+	if delta == 0:
+		return
+	var before: int = _ap
+	_ap = clamp(_ap + delta, 0, _ap_max)
+	var applied: int = _ap - before
+	if applied != 0:
+		emit_signal("points_changed", _ap, applied)
+		_update_bars_values()
+
+func get_points() -> int:
+	return _ap
+
+func can_afford(cost: int) -> bool:
+	return cost <= _ap
+
+func spend(cost: int) -> bool:
+	if cost <= 0:
+		return true
+	if cost > _ap:
+		return false
+	_ap -= cost
+	emit_signal("points_changed", _ap, -cost)
+	_update_bars_values()
+	return true

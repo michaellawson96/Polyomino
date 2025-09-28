@@ -21,6 +21,7 @@ signal critical_started(active: bool)
 signal bag_reconfig_ok(ids: Array[String])
 signal bag_reconfig_fail(ids: Array[String])
 signal rows_cleared_blocks(y: int, block_count: int, span_count: int)
+signal spawn_autoslide_started()
 
 
 
@@ -931,6 +932,10 @@ func _enter_state(s: int) -> void:
 		_hold_right = false
 		_hold_dir = 0
 		_hold_timer_ms = -1
+	if _state == GameState.PRECONTROL_AUTOSLIDE:
+		if has_signal("spawn_autoslide_started"):
+			emit_signal("spawn_autoslide_started")
+
 
 func set_paused(p: bool) -> void:
 	if p:

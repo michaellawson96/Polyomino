@@ -5,7 +5,9 @@
 [resource]
 script = ExtResource("1")
 notes = "Default battle config (stub)."
-piece_base_color = Color(0.773063, 0.510796, 0.756651, 1)
+piece_base_color = Color(0.2, 0.65, 0.95, 1)
 shade_min = 0.35
 shade_max = 0.85
 forced_piece_colors = {}
+points_per_cell = 1
+combo_cap = 3
