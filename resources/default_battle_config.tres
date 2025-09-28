@@ -5,9 +5,17 @@
 [resource]
 script = ExtResource("1")
 notes = "Default battle config (stub)."
-piece_base_color = Color(0.2, 0.65, 0.95, 1)
-shade_min = 0.35
-shade_max = 0.85
-forced_piece_colors = {}
 points_per_cell = 1
 combo_cap = 3
+actions_always_visible = true
+action_attack_label = "Attack"
+action_attack_cost = 5
+action2_id = ""
+action2_label = ""
+action2_cost = 0
+action3_id = ""
+action3_label = ""
+action3_cost = 0
+action4_id = ""
+action4_label = ""
+action4_cost = 0

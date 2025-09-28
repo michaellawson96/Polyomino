@@ -22,6 +22,13 @@ var _in_chain: bool = false
 @onready var player_label: Label = $UIRoot/HUDRoot/RightHUD/PlayerRail/PlayerLabel
 @onready var ap_bar: Control = $UIRoot/HUDRoot/RightHUD/APArea/APBar
 @onready var ap_label: Label = $UIRoot/HUDRoot/RightHUD/APArea/APLabel
+@onready var _actions_root: Control = $UIRoot/HUDRoot/ActionsRoot
+@onready var _act_down: Label = $UIRoot/HUDRoot/ActionsRoot/ActionDown
+@onready var _act_left: Label = $UIRoot/HUDRoot/ActionsRoot/ActionLeft
+@onready var _act_right: Label = $UIRoot/HUDRoot/ActionsRoot/ActionRight
+@onready var _act_up: Label = $UIRoot/HUDRoot/ActionsRoot/ActionUp
+
+
 
 var _hp_player: int = 20
 var _hp_player_max: int = 20
@@ -33,6 +40,7 @@ var _combo: int = 0
 var _combo_timer: Timer = null
 var _gap_px: int = 8
 var _bar_w: int = 0
+var _actions: Dictionary = {} # dir -> {id, label, cost}
 
 
 
@@ -63,6 +71,120 @@ func _ready() -> void:
 	_connect_board_hud_signals()
 	_update_bars_geometry()
 	_update_bars_values()
+	_build_actions_from_config()
+	_position_actions_ui()
+	_refresh_actions_ui()
+	_set_actions_visibility_from_config()
+	if not is_connected("points_changed", Callable(self, "_on_points_changed_refresh_actions")):
+		connect("points_changed", Callable(self, "_on_points_changed_refresh_actions"))
+
+func _on_points_changed_refresh_actions(new_total: int, delta: int) -> void:
+	_refresh_actions_ui()
+
+
+func _build_actions_from_config() -> void:
+	# Down = slot1 = Attack (always present)
+	var atk_label := battle_config.action_attack_label if (battle_config != null and battle_config.action_attack_label != "")  else "Attack"
+	var atk_cost :=  int(battle_config.action_attack_cost) if (battle_config != null) else 5
+	_actions["down"] = {"id":"attack","label":atk_label,"cost":max(0, atk_cost)}
+	# Left = slot2
+	var id2 := String(battle_config.action2_id) if (battle_config != null) else ""
+	var lb2 := String(battle_config.action2_label) if (battle_config != null) else ""
+	var c2 := int(battle_config.action2_cost) if (battle_config != null) else 0
+	_actions["left"] = {"id":id2,"label":lb2,"cost":max(0, c2)}
+	# Right = slot3
+	var id3 := String(battle_config.action3_id) if (battle_config != null) else ""
+	var lb3 := String(battle_config.action3_label) if (battle_config != null) else ""
+	var c3 := int(battle_config.action3_cost) if (battle_config != null) else 0
+	_actions["right"] = {"id":id3,"label":lb3,"cost":max(0, c3)}
+	# Up = slot4
+	var id4 := String(battle_config.action4_id) if (battle_config != null) else ""
+	var lb4 := String(battle_config.action4_label) if (battle_config != null) else ""
+	var c4 := int(battle_config.action4_cost) if (battle_config != null) else 0
+	_actions["up"] = {"id":id4,"label":lb4,"cost":max(0, c4)}
+
+func _set_actions_visibility_from_config() -> void:
+	if _actions_root == null:
+		return
+	var vis := true
+	if battle_config != null and "actions_always_visible" in battle_config:
+		vis = bool(battle_config.actions_always_visible)
+	_actions_root.visible = vis
+
+func _position_actions_ui() -> void:
+	if _board == null or _actions_root == null:
+		return
+	var cell: int = 26
+	if "cell_size" in _board:
+		cell = int(_board.cell_size)
+	var cols: int = 10
+	if "board_width" in _board:
+		cols = int(_board.board_width)
+	var rows: int = 20
+	if "board_height" in _board:
+		rows = int(_board.board_height)
+	var board_px_w: int = cols * cell
+	var board_px_h: int = rows * cell
+	var origin : Vector2 = _board.position
+	var cross_size: float = float(max(cell * 3, 72))
+	var right_edge: float = origin.x + float(board_px_w)
+	var top_edge: float = origin.y
+	var center_y: float = origin.y + float(board_px_h) * 0.5
+
+	# Place cross to the right of the Player rail by a small gap
+	var gap: float = 8.0
+	var x0: float = right_edge + float(_gap_px) + float(_bar_w) + gap
+	var y0: float = center_y - cross_size * 0.5
+	_actions_root.position = Vector2(x0, y0)
+
+	var cx: float = cross_size * 0.5
+	var cy: float = cross_size * 0.5
+	var off: float = max(20.0, float(cell))
+	_act_down.position = Vector2(cx - 40.0, cy + off)
+	_act_left.position = Vector2(cx - off - 60.0, cy - 12.0)
+	_act_right.position = Vector2(cx + off + 12.0, cy - 12.0)
+	_act_up.position = Vector2(cx - 16.0, cy - off - 24.0)
+
+func _refresh_actions_ui() -> void:
+	if _actions_root == null:
+		return
+	_set_slot_text_and_color("down", _act_down, "Down")
+	_set_slot_text_and_color("left", _act_left, "Left")
+	_set_slot_text_and_color("right", _act_right, "Right")
+	_set_slot_text_and_color("up", _act_up, "Up")
+
+func _set_slot_text_and_color(dir: String, label: Label, prefix: String) -> void:
+	if label == null:
+		return
+	var data : Dictionary = _actions.get(dir, {})
+	var id := String(data.get("id", ""))
+	var name := String(data.get("label", ""))
+	var cost := int(data.get("cost", 0))
+	var has := id != "" and name != ""
+	var afford := can_afford(cost)
+	var text := prefix + " — " + ((name + " • " + str(cost) + " AP") if has else "(empty)")
+	label.text = text
+	label.modulate = Color(1,1,1,1) if has and afford else Color(1,0,0,1)
+
+func _try_trigger_action(dir: String) -> void:
+	var data : Dictionary = _actions.get(dir, {})
+	var id := String(data.get("id", ""))
+	var name := String(data.get("label", ""))
+	var cost := int(data.get("cost", 0))
+	if id == "" or name == "":
+		return
+	if not can_afford(cost):
+		return
+	# Sequence: hide menu visuals, spend immediately, emit, then close menu (unpauses board)
+	if _menu_open:
+		_menu_set_visible(false)
+		if _board != null and _board.has_method("set_visuals_hidden"):
+			_board.call("set_visuals_hidden", false)
+	var ok := spend(cost)
+	if ok:
+		emit_signal("action_triggered", id, cost)
+		_close_menu() # restores FBS and unpauses per your menu flow
+
 
 func _load_points_config() -> void:
 	if battle_config != null:
@@ -91,6 +213,14 @@ func _input(event: InputEvent) -> void:
 		if _menu_open:
 			if _menu_mode == "toggle":
 				_close_menu()
+			if event.is_action_pressed("ui_down"):
+				_try_trigger_action("down"); get_viewport().set_input_as_handled(); return
+			if event.is_action_pressed("ui_left"):
+				_try_trigger_action("left"); get_viewport().set_input_as_handled(); return
+			if event.is_action_pressed("ui_right"):
+				_try_trigger_action("right"); get_viewport().set_input_as_handled(); return
+			if event.is_action_pressed("ui_up"):
+				_try_trigger_action("up"); get_viewport().set_input_as_handled(); return
 		else:
 			if not _hold_active:
 				_open_menu("toggle")
@@ -291,6 +421,7 @@ func _update_bars_geometry() -> void:
 	_bar_w = max(12, cell)
 	var board_px_w: int = cols * cell
 	var board_px_h: int = rows * cell
+	_position_actions_ui()
 
 	# Shift board right to make room for left rail + label
 	var desired_left_margin: int = _bar_w * 5
@@ -359,6 +490,12 @@ func _connect_board_hud_signals() -> void:
 		_board.connect("rows_cleared_blocks", Callable(self, "_on_rows_cleared_blocks"))
 	if _board.has_signal("spawn_autoslide_started"):
 		_board.connect("spawn_autoslide_started", Callable(self, "_on_spawn_autoslide_started"))
+	if _board.has_signal("mask_applied"):
+		_board.connect("mask_applied", Callable(self, "_on_board_geometry_changed"))
+
+func _on_board_geometry_changed() -> void:
+	_update_bars_geometry()
+	_position_actions_ui()
 
 
 func _setup_combo_timer() -> void:
